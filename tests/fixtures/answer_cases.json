@@ -1,0 +1,371 @@
+[
+  {
+    "id": "redis_fast",
+    "question": "Redis 为什么快？",
+    "required_groups": [["内存"], ["单线程", "锁竞争"], ["多路复用", "epoll"]],
+    "forbidden_terms": ["纳秒级", "百万级QPS", "二进制压缩"]
+  },
+  {
+    "id": "redis_persistence",
+    "question": "比较一下 Redis 的 RDB 和 AOF。",
+    "required_groups": [["RDB", "快照"], ["AOF", "命令", "日志"], ["恢复", "丢失", "可靠"]],
+    "forbidden_terms": ["AOF一定不会丢数据", "RDB实时"]
+  },
+  {
+    "id": "mysql_bplus",
+    "question": "MySQL 索引为什么通常使用 B+ 树？",
+    "required_groups": [["树高", "树矮", "磁盘IO", "磁盘 I/O", "IO次数"], ["叶子节点"], ["范围", "链表"]],
+    "forbidden_terms": ["查询只需要一次IO", "永远是O(1)"]
+  },
+  {
+    "id": "mysql_mvcc",
+    "question": "MySQL 的 MVCC 是怎么实现的？",
+    "required_groups": [["undo log", "undo日志"], ["Read View", "读视图"], ["版本链", "事务ID"]],
+    "forbidden_terms": ["完全不加锁", "所有隔离级别都一样"]
+  },
+  {
+    "id": "mysql_isolation",
+    "question": "数据库的四种事务隔离级别是什么？",
+    "required_groups": [["读未提交"], ["读已提交"], ["可重复读"], ["串行化"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "java_volatile",
+    "question": "Java 的 volatile 有什么作用？",
+    "required_groups": [["可见性"], ["有序", "重排序"], ["不保证原子", "不能保证原子"]],
+    "forbidden_terms": ["所有操作都原子", "直接在主存"]
+  },
+  {
+    "id": "java_threadlocal",
+    "question": "ThreadLocal 为什么可能导致内存泄漏？",
+    "required_groups": [["弱引用"], ["强引用"], ["remove", "线程池", "长期存活"]],
+    "forbidden_terms": ["key是强引用", "value是弱引用"]
+  },
+  {
+    "id": "java_threadpool",
+    "question": "Java 线程池有哪些核心参数？",
+    "required_groups": [["corePoolSize", "核心线程"], ["maximumPoolSize", "最大线程"], ["队列", "workQueue"], ["拒绝策略", "handler"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "java_hashmap",
+    "question": "JDK 8 的 HashMap 底层结构是什么？",
+    "required_groups": [["数组"], ["链表"], ["红黑树"], ["8", "64"]],
+    "forbidden_terms": ["线程安全"]
+  },
+  {
+    "id": "java_chm",
+    "question": "JDK 8 的 ConcurrentHashMap 如何保证并发安全？",
+    "required_groups": [["CAS"], ["synchronized"], ["节点", "桶", "链表", "红黑树"]],
+    "forbidden_terms": ["Segment分段锁", "读操作全部加锁"]
+  },
+  {
+    "id": "java_aqs",
+    "question": "简单介绍一下 AQS 的原理。",
+    "required_groups": [["state", "同步状态", "状态变量", "状态位"], ["CAS"], ["队列", "CLH"], ["独占", "共享"]],
+    "forbidden_terms": [],
+    "grounding": "AQS 核心包括 volatile int state、CAS 更新同步状态和 FIFO/CLH 风格等待队列；获取失败的线程入队并可能 park，释放时唤醒后继；同时支持独占与共享模式。"
+  },
+  {
+    "id": "jvm_gc_roots",
+    "question": "JVM 如何判断对象是否可以回收？",
+    "required_groups": [["可达性分析"], ["GC Roots"], ["栈", "静态", "JNI", "常量"]],
+    "forbidden_terms": ["引用计数是JVM主要算法"]
+  },
+  {
+    "id": "jvm_cms_g1",
+    "question": "比较一下 CMS 和 G1 垃圾收集器。",
+    "required_groups": [["CMS", "标记清除", "碎片"], ["G1", "Region", "分区"], ["停顿", "并发"]],
+    "forbidden_terms": ["G1完全没有停顿", "CMS不会产生碎片"]
+  },
+  {
+    "id": "tcp_handshake",
+    "question": "说一下 TCP 三次握手的过程和作用。",
+    "required_groups": [["SYN"], ["SYN-ACK", "SYN+ACK"], ["ACK"], ["序列号", "收发能力"]],
+    "forbidden_terms": ["建立加密连接"]
+  },
+  {
+    "id": "tcp_timewait",
+    "question": "TCP 主动关闭方为什么要进入 TIME_WAIT？",
+    "required_groups": [["2MSL"], ["最后", "ACK"], ["旧报文", "重复报文", "旧连接报文", "旧连接的报文", "旧数据包"]],
+    "forbidden_terms": ["服务端一定进入TIME_WAIT"]
+  },
+  {
+    "id": "http2",
+    "question": "HTTP/2 相比 HTTP/1.1 有哪些主要改进？",
+    "required_groups": [["多路复用"], ["二进制"], ["头部压缩", "HPACK"]],
+    "forbidden_terms": ["彻底消除队头阻塞", "基于UDP"]
+  },
+  {
+    "id": "https",
+    "question": "HTTPS 建立安全连接的大致过程是什么？",
+    "required_groups": [["TLS"], ["证书"], ["密钥", "握手"], ["对称加密", "对称密钥", "会话密钥"]],
+    "forbidden_terms": ["全程使用非对称加密", "用公钥加密发送"],
+    "grounding": "现代 TLS 的通用描述：证书用于认证服务端身份，客户端与服务端通常通过 (EC)DHE 密钥交换协商共享秘密并派生对称会话密钥，随后使用对称加密传输数据。不要把旧式 RSA 密钥传输描述为所有 HTTPS 的通用流程。"
+  },
+  {
+    "id": "deadlock",
+    "question": "产生死锁的四个必要条件是什么？",
+    "required_groups": [["互斥"], ["请求", "保持", "占有并等待", "占有且等待", "持有并等待"], ["不可剥夺", "不可抢占"], ["循环等待"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "io_multiplexing",
+    "question": "select、poll 和 epoll 的主要区别是什么？",
+    "required_groups": [["select"], ["poll"], ["epoll"], ["遍历", "就绪", "事件"]],
+    "forbidden_terms": ["epoll任何场景都最快", "epoll是O(1)", "没有fd数量上限"],
+    "grounding": "select 受 FD_SETSIZE 等固定集合限制；poll 使用动态数组但仍需线性遍历；epoll 没有 select 那样的固定 1024 限制，但仍受进程文件描述符上限和系统内存限制，不能说没有数量上限。"
+  },
+  {
+    "id": "cap",
+    "question": "解释一下分布式系统中的 CAP。",
+    "required_groups": [["一致性"], ["可用性"], ["分区容错"], ["取舍", "二选一", "CP", "AP"]],
+    "forbidden_terms": ["三个永远不能同时满足"],
+    "grounding": "CAP 的精确定义：当网络分区 P 发生时，系统无法同时保证一致性 C 和可用性 A，必须在二者之间取舍。不要脱离网络分区条件说三个属性永远不能同时满足。"
+  },
+  {
+    "id": "consistent_hash",
+    "question": "一致性哈希解决什么问题？虚拟节点有什么作用？",
+    "required_groups": [["哈希环", "映射"], ["迁移", "重映射"], ["虚拟节点"], ["均匀", "倾斜"]],
+    "forbidden_terms": ["完全不迁移数据"]
+  },
+  {
+    "id": "lru",
+    "question": "如何实现一个 O(1) 时间复杂度的 LRU 缓存？",
+    "required_groups": [["哈希表"], ["双向链表"], ["O(1)"], ["头", "尾"]],
+    "forbidden_terms": ["数组排序"]
+  },
+  {
+    "id": "quicksort",
+    "question": "快速排序的平均和最坏时间复杂度分别是多少？",
+    "required_groups": [["O(n log n)", "O(nlogn)"], ["O(n²)", "O(n^2)"]],
+    "forbidden_terms": ["最坏也是O(n log n)"]
+  },
+  {
+    "id": "payment_idempotency",
+    "question": "高并发下如何保证支付接口幂等？",
+    "required_groups": [["唯一", "幂等键", "业务号"], ["唯一索引", "原子"], ["状态机", "查重", "锁"]],
+    "forbidden_terms": ["只靠前端防抖", "先查再插就一定安全"]
+  },
+  {
+    "id": "java_string_compare",
+    "question": "String、StringBuilder 和 StringBuffer 有什么区别？",
+    "required_groups": [["不可变"], ["StringBuilder", "线程不安全"], ["StringBuffer", "线程安全"]],
+    "forbidden_terms": ["String是可变的"]
+  },
+  {
+    "id": "java_equals_hashcode",
+    "question": "为什么重写 equals 时通常也要重写 hashCode？",
+    "required_groups": [["相等"], ["hashCode", "哈希值"], ["HashMap", "哈希集合", "HashSet"]],
+    "forbidden_terms": ["equals相等时hashCode可以不同"]
+  },
+  {
+    "id": "java_finally",
+    "question": "Java 中 final、finally 和 finalize 有什么区别？",
+    "required_groups": [["final"], ["finally"], ["finalize", "废弃"]],
+    "forbidden_terms": ["finalize保证对象被回收"]
+  },
+  {
+    "id": "java_exceptions",
+    "question": "Java 的受检异常和非受检异常有什么区别？",
+    "required_groups": [["编译", "受检"], ["RuntimeException", "运行时"], ["处理", "throws", "catch"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "jvm_memory_areas",
+    "question": "JVM 运行时内存区域有哪些？",
+    "required_groups": [["堆"], ["虚拟机栈", "栈"], ["方法区", "元空间"], ["程序计数器"]],
+    "forbidden_terms": ["所有区域都线程共享"]
+  },
+  {
+    "id": "jvm_class_loading",
+    "question": "Java 类加载过程有哪些阶段？",
+    "required_groups": [["加载"], ["验证"], ["准备"], ["解析"], ["初始化"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "jvm_parent_delegation",
+    "question": "什么是类加载器的双亲委派模型？",
+    "required_groups": [["父", "上级"], ["加载"], ["重复", "核心类", "安全"]],
+    "forbidden_terms": ["父加载器失败后永远报错"]
+  },
+  {
+    "id": "java_synchronized_lock",
+    "question": "synchronized 的底层原理是什么？",
+    "required_groups": [["monitor", "监视器"], ["互斥"], ["对象头", "字节码"], ["可见性"]],
+    "forbidden_terms": ["只是一种自旋锁"],
+    "grounding": "synchronized 方法由 ACC_SYNCHRONIZED 标志实现，同步代码块由 monitorenter/monitorexit 字节码实现，最终关联对象监视器；进入和退出还建立 happens-before，保证可见性。偏向锁等优化具有 JDK 版本差异，不能描述成所有现代 JDK 的固定升级流程。"
+  },
+  {
+    "id": "java_lock_compare",
+    "question": "ReentrantLock 和 synchronized 有什么区别？",
+    "required_groups": [["可中断", "超时", "公平锁"], ["自动释放"], ["手动", "unlock"], ["Condition"]],
+    "forbidden_terms": ["synchronized不能重入"],
+    "grounding": "两者都可重入。synchronized 由 JVM 管理并自动释放；ReentrantLock 需要 finally 中 unlock，支持可中断获取、超时、公平策略和多个 Condition 等更灵活能力。"
+  },
+  {
+    "id": "java_thread_states",
+    "question": "Java 线程有哪些状态？",
+    "required_groups": [["NEW"], ["RUNNABLE"], ["BLOCKED"], ["WAITING"], ["TIMED_WAITING"], ["TERMINATED"]],
+    "forbidden_terms": [],
+    "grounding": "Java Thread.State 精确包含 NEW、RUNNABLE、BLOCKED、WAITING、TIMED_WAITING、TERMINATED 六种。RUNNABLE 同时覆盖就绪和正在运行，不能单独翻译成就绪。"
+  },
+  {
+    "id": "spring_ioc_aop",
+    "question": "Spring IOC 和 AOP 分别解决什么问题？",
+    "required_groups": [["IOC", "依赖注入", "控制反转"], ["AOP", "切面"], ["解耦", "横切"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "spring_bean_lifecycle",
+    "question": "Spring Bean 的生命周期大致是什么？",
+    "required_groups": [["实例化"], ["属性", "依赖注入"], ["初始化"], ["销毁"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "spring_transaction_failure",
+    "question": "Spring 声明式事务常见的失效场景有哪些？",
+    "required_groups": [["代理", "自调用"], ["非public", "private"], ["异常", "捕获"], ["数据库", "事务"]],
+    "forbidden_terms": ["所有异常都会自动回滚"],
+    "grounding": "Spring 声明式事务依赖代理和事务管理器。常见失效包括同类自调用绕过代理、非 public 方法、异常被内部捕获、默认不回滚受检异常、对象未被 Spring 管理、传播行为不当，以及数据库引擎不支持事务。"
+  },
+  {
+    "id": "spring_mvc_flow",
+    "question": "Spring MVC 一次请求的大致处理流程是什么？",
+    "required_groups": [["DispatcherServlet"], ["HandlerMapping"], ["Controller", "Handler"], ["视图", "响应"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "mysql_acid",
+    "question": "数据库事务的 ACID 分别是什么？",
+    "required_groups": [["原子性"], ["一致性"], ["隔离性"], ["持久性"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "mysql_logs",
+    "question": "MySQL 的 redo log、undo log 和 binlog 分别有什么作用？",
+    "required_groups": [["redo", "持久性", "崩溃恢复"], ["undo", "回滚", "MVCC"], ["binlog", "归档", "复制"]],
+    "forbidden_terms": ["binlog是InnoDB独有"]
+  },
+  {
+    "id": "mysql_clustered_index",
+    "question": "聚簇索引和二级索引有什么区别？",
+    "required_groups": [["主键", "聚簇"], ["叶子节点", "行数据"], ["二级索引", "主键值", "回表"]],
+    "forbidden_terms": ["二级索引叶子直接存完整行"]
+  },
+  {
+    "id": "mysql_leftmost_prefix",
+    "question": "联合索引的最左前缀原则是什么？",
+    "required_groups": [["最左"], ["连续"], ["范围", "后续列"], ["顺序"]],
+    "forbidden_terms": ["必须使用全部索引列"],
+    "grounding": "联合 B+ 树索引按列顺序排序，通常从最左列连续匹配；跳过中间列会削弱后续列定位能力，某列使用范围条件后，后续列通常不能继续缩小扫描区间，但仍可能用于索引下推或其他优化。MySQL 新版本还可能使用 skip scan，避免绝对化表述。"
+  },
+  {
+    "id": "mysql_index_invalid",
+    "question": "MySQL 索引常见的失效场景有哪些？",
+    "required_groups": [["函数", "计算"], ["类型转换"], ["like", "%"], ["联合索引", "最左"]],
+    "forbidden_terms": ["使用or一定失效"]
+  },
+  {
+    "id": "redis_cache_problems",
+    "question": "缓存穿透、击穿和雪崩分别是什么？",
+    "required_groups": [["穿透", "不存在"], ["击穿", "热点"], ["雪崩", "大量", "同时过期"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "redis_expiration",
+    "question": "Redis 的过期键删除策略是什么？",
+    "required_groups": [["惰性"], ["定期"], ["过期"]],
+    "forbidden_terms": ["只使用定时删除"]
+  },
+  {
+    "id": "redis_eviction",
+    "question": "Redis 常见的内存淘汰策略有哪些？",
+    "required_groups": [["LRU"], ["LFU"], ["random", "随机"], ["TTL", "过期"], ["noeviction"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "redis_lock",
+    "question": "用 Redis 实现分布式锁需要注意什么？",
+    "required_groups": [["SET", "NX", "PX"], ["唯一值", "token"], ["Lua", "原子"], ["续期", "超时"]],
+    "forbidden_terms": ["setnx后再单独expire就完全安全"]
+  },
+  {
+    "id": "redis_cluster",
+    "question": "Redis Sentinel 和 Cluster 分别解决什么问题？",
+    "required_groups": [["Sentinel", "哨兵", "故障转移"], ["Cluster", "分片", "槽"], ["高可用"]],
+    "forbidden_terms": ["Sentinel负责数据分片"]
+  },
+  {
+    "id": "tcp_udp",
+    "question": "TCP 和 UDP 的主要区别是什么？",
+    "required_groups": [["连接"], ["可靠"], ["有序"], ["UDP", "报文", "开销"]],
+    "forbidden_terms": ["UDP绝对不会丢包"]
+  },
+  {
+    "id": "tcp_flow_congestion",
+    "question": "TCP 流量控制和拥塞控制有什么区别？",
+    "required_groups": [["接收方", "窗口", "流量控制"], ["网络", "拥塞窗口", "拥塞控制"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "tcp_four_way_close",
+    "question": "TCP 为什么通常需要四次挥手？",
+    "required_groups": [["FIN"], ["ACK"], ["半关闭"], ["数据", "独立"]],
+    "forbidden_terms": ["任何情况下都必须四次"]
+  },
+  {
+    "id": "dns_resolution",
+    "question": "浏览器进行 DNS 解析的大致过程是什么？",
+    "required_groups": [["缓存"], ["递归", "本地DNS"], ["根"], ["顶级域", "权威"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "cookie_session_token",
+    "question": "Cookie、Session 和 Token 有什么区别？",
+    "required_groups": [["Cookie", "客户端"], ["Session", "服务端"], ["Token", "无状态", "签名"]],
+    "forbidden_terms": ["Token天然绝对安全"]
+  },
+  {
+    "id": "os_process_thread",
+    "question": "进程和线程有什么区别？",
+    "required_groups": [["资源", "地址空间"], ["调度", "执行"], ["共享"], ["开销"]],
+    "forbidden_terms": ["线程之间完全隔离"]
+  },
+  {
+    "id": "os_virtual_memory",
+    "question": "什么是虚拟内存？它有什么作用？",
+    "required_groups": [["虚拟地址"], ["物理内存"], ["隔离"], ["分页", "换页"]],
+    "forbidden_terms": ["虚拟内存就是磁盘"]
+  },
+  {
+    "id": "distributed_mq",
+    "question": "为什么系统中经常引入消息队列？",
+    "required_groups": [["解耦"], ["异步"], ["削峰"], ["可靠", "重复", "顺序"]],
+    "forbidden_terms": ["引入消息队列没有任何代价"]
+  },
+  {
+    "id": "mq_duplicate",
+    "question": "如何处理消息队列的重复消费？",
+    "required_groups": [["幂等"], ["唯一", "消息ID"], ["数据库", "状态", "去重"]],
+    "forbidden_terms": ["只要手动ACK就不会重复"]
+  },
+  {
+    "id": "distributed_transaction",
+    "question": "常见的分布式事务方案有哪些？",
+    "required_groups": [["2PC", "两阶段提交"], ["TCC"], ["Saga"], ["消息", "最终一致性"]],
+    "forbidden_terms": ["所有方案都保证强一致"]
+  },
+  {
+    "id": "rate_limiting",
+    "question": "常见的限流算法有哪些？",
+    "required_groups": [["固定窗口"], ["滑动窗口"], ["漏桶"], ["令牌桶"]],
+    "forbidden_terms": []
+  },
+  {
+    "id": "bloom_filter",
+    "question": "布隆过滤器的原理和特点是什么？",
+    "required_groups": [["位图", "bit"], ["哈希"], ["误判"], ["不存在", "一定"]],
+    "forbidden_terms": ["绝对不会误判", "支持直接删除任意元素"]
+  }
+]

@@ -1,0 +1,257 @@
+[
+  {
+    "id": "wait_01",
+    "expected_action": "WAIT",
+    "current_focus": null,
+    "conversation": [{"speaker": "interviewer", "text": "我先问一个关于 Redis 的问题。"}]
+  },
+  {
+    "id": "wait_02",
+    "expected_action": "WAIT",
+    "current_focus": null,
+    "conversation": [{"speaker": "interviewer", "text": "Redis 的持久化这个……"}]
+  },
+  {
+    "id": "wait_03",
+    "expected_action": "WAIT",
+    "current_focus": null,
+    "conversation": [{"speaker": "interviewer", "text": "嗯，我看一下。"}]
+  },
+  {
+    "id": "wait_04",
+    "expected_action": "WAIT",
+    "current_focus": "Redis 为什么快？",
+    "conversation": [
+      {"speaker": "interviewer", "text": "Redis 为什么快？"},
+      {"speaker": "candidate", "text": "因为数据主要存储在内存中。"}
+    ]
+  },
+  {
+    "id": "wait_05",
+    "expected_action": "WAIT",
+    "current_focus": "MySQL 的索引结构",
+    "conversation": [{"speaker": "interviewer", "text": "这个问题我们先放一下。"}]
+  },
+  {
+    "id": "wait_06",
+    "expected_action": "WAIT",
+    "current_focus": null,
+    "conversation": [{"speaker": "interviewer", "text": "你刚才提到了 JVM……"}]
+  },
+  {
+    "id": "wait_07",
+    "expected_action": "WAIT",
+    "current_focus": "TCP 三次握手",
+    "conversation": [{"speaker": "interviewer", "text": "好，明白了。"}]
+  },
+  {
+    "id": "wait_08",
+    "expected_action": "WAIT",
+    "current_focus": null,
+    "conversation": [{"speaker": "interviewer", "text": "接下来可能会有一道算法题。"}]
+  },
+  {
+    "id": "wait_09",
+    "expected_action": "WAIT",
+    "current_focus": null,
+    "conversation": [{"speaker": "interviewer", "text": "你先别急着回答，我把背景说完。"}]
+  },
+  {
+    "id": "wait_10",
+    "expected_action": "WAIT",
+    "current_focus": null,
+    "conversation": [{"speaker": "interviewer", "text": "我想想还有什么。"}]
+  },
+  {
+    "id": "wait_11",
+    "expected_action": "WAIT",
+    "current_focus": null,
+    "conversation": [{"speaker": "interviewer", "text": "这里背景比较复杂，我先解释一下。"}]
+  },
+  {
+    "id": "wait_12",
+    "expected_action": "WAIT",
+    "current_focus": null,
+    "conversation": [{"speaker": "interviewer", "text": "我们先看一下你的项目。"}]
+  },
+  {
+    "id": "answer_01",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["Redis", "快"],
+    "conversation": [{"speaker": "interviewer", "text": "Redis 为什么快？"}]
+  },
+  {
+    "id": "answer_02",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["RDB", "AOF"],
+    "conversation": [{"speaker": "interviewer", "text": "比较一下 Redis 的 RDB 和 AOF。"}]
+  },
+  {
+    "id": "answer_03",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["MySQL", "B+"],
+    "conversation": [{"speaker": "interviewer", "text": "MySQL 索引为什么通常使用 B+ 树？"}]
+  },
+  {
+    "id": "answer_04",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["volatile"],
+    "conversation": [{"speaker": "interviewer", "text": "Java 的 volatile 有什么作用？"}]
+  },
+  {
+    "id": "answer_05",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["ThreadLocal", "内存泄漏"],
+    "conversation": [{"speaker": "interviewer", "text": "ThreadLocal 为什么可能导致内存泄漏？"}]
+  },
+  {
+    "id": "answer_06",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["TCP", "三次握手"],
+    "conversation": [{"speaker": "interviewer", "text": "说一下 TCP 三次握手的过程。"}]
+  },
+  {
+    "id": "answer_07",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["HTTP/2"],
+    "conversation": [{"speaker": "interviewer", "text": "HTTP/2 相比 HTTP/1.1 有哪些改进？"}]
+  },
+  {
+    "id": "answer_08",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["死锁", "条件"],
+    "conversation": [{"speaker": "interviewer", "text": "产生死锁需要满足哪些条件？"}]
+  },
+  {
+    "id": "answer_09",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["接口", "幂等"],
+    "conversation": [{"speaker": "interviewer", "text": "如果让你设计一个幂等的支付接口，你会怎么做？"}]
+  },
+  {
+    "id": "answer_10",
+    "expected_action": "ANSWER",
+    "current_focus": null,
+    "required_question_terms": ["链表", "反转"],
+    "conversation": [{"speaker": "interviewer", "text": "请说一下单链表反转的思路和复杂度。"}]
+  },
+  {
+    "id": "answer_11",
+    "expected_action": "ANSWER",
+    "current_focus": "Redis 为什么快？",
+    "required_question_terms": ["Redis", "持久化"],
+    "conversation": [{"speaker": "interviewer", "text": "先不说性能了，讲一下 Redis 的持久化方式。"}]
+  },
+  {
+    "id": "answer_12",
+    "expected_action": "ANSWER",
+    "current_focus": "Java 线程池参数",
+    "required_question_terms": ["JVM", "回收"],
+    "conversation": [{"speaker": "interviewer", "text": "换一个问题，JVM 怎么判断对象可以被回收？"}]
+  },
+  {
+    "id": "update_01",
+    "expected_action": "UPDATE",
+    "current_focus": "Redis 为什么快？",
+    "required_question_terms": ["Redis", "快"],
+    "conversation": [
+      {"speaker": "candidate", "text": "因为数据主要存储在内存中。"},
+      {"speaker": "interviewer", "text": "还有呢？"}
+    ]
+  },
+  {
+    "id": "update_02",
+    "expected_action": "UPDATE",
+    "current_focus": "比较 Redis 的 RDB 和 AOF",
+    "required_question_terms": ["AOF"],
+    "conversation": [
+      {"speaker": "candidate", "text": "RDB 是定期生成内存快照。"},
+      {"speaker": "interviewer", "text": "那 AOF 呢？"}
+    ]
+  },
+  {
+    "id": "update_03",
+    "expected_action": "UPDATE",
+    "current_focus": "MySQL 索引为什么使用 B+ 树？",
+    "required_question_terms": ["B+", "磁盘", "IO"],
+    "conversation": [{"speaker": "interviewer", "text": "重点从磁盘 IO 的角度讲。"}]
+  },
+  {
+    "id": "update_04",
+    "expected_action": "UPDATE",
+    "current_focus": "Java volatile 的作用",
+    "required_question_terms": ["volatile", "原子性"],
+    "conversation": [{"speaker": "interviewer", "text": "那它能保证原子性吗？"}]
+  },
+  {
+    "id": "update_05",
+    "expected_action": "UPDATE",
+    "current_focus": "TCP 三次握手的过程",
+    "required_question_terms": ["TCP", "两次"],
+    "conversation": [
+      {"speaker": "candidate", "text": "客户端发 SYN，服务端回 SYN-ACK，客户端再发 ACK。"},
+      {"speaker": "interviewer", "text": "为什么不能只握手两次？"}
+    ]
+  },
+  {
+    "id": "update_06",
+    "expected_action": "UPDATE",
+    "current_focus": "Java 线程池有哪些核心参数？",
+    "required_question_terms": ["线程池", "拒绝策略"],
+    "conversation": [{"speaker": "interviewer", "text": "拒绝策略又有哪些？"}]
+  },
+  {
+    "id": "update_07",
+    "expected_action": "UPDATE",
+    "current_focus": "HashMap 的底层结构",
+    "required_question_terms": ["HashMap", "1.7", "1.8"],
+    "conversation": [{"speaker": "interviewer", "text": "那 JDK 1.7 和 1.8 有什么区别？"}]
+  },
+  {
+    "id": "update_08",
+    "expected_action": "UPDATE",
+    "current_focus": "一致性哈希解决了什么问题？",
+    "required_question_terms": ["一致性哈希", "虚拟节点"],
+    "conversation": [{"speaker": "interviewer", "text": "虚拟节点在这里有什么作用？"}]
+  },
+  {
+    "id": "update_09",
+    "expected_action": "UPDATE",
+    "current_focus": "JVM 如何判断对象可以回收？",
+    "required_question_terms": ["CMS", "G1"],
+    "conversation": [{"speaker": "interviewer", "text": "再比较一下 CMS 和 G1。"}]
+  },
+  {
+    "id": "update_10",
+    "expected_action": "UPDATE",
+    "current_focus": "Redis 为什么快？",
+    "required_question_terms": ["Redis", "单线程"],
+    "conversation": [
+      {"speaker": "candidate", "text": "Redis 所有工作都是单线程完成的。"},
+      {"speaker": "interviewer", "text": "你确定所有操作都是单线程吗？"}
+    ]
+  },
+  {
+    "id": "update_11",
+    "expected_action": "UPDATE",
+    "current_focus": "如何反转单链表？",
+    "required_question_terms": ["链表", "空间复杂度", "O(1)"],
+    "conversation": [{"speaker": "interviewer", "text": "要求额外空间复杂度是 O(1)。"}]
+  },
+  {
+    "id": "update_12",
+    "expected_action": "UPDATE",
+    "current_focus": "如何保证支付接口幂等？",
+    "required_question_terms": ["幂等", "并发"],
+    "conversation": [{"speaker": "interviewer", "text": "高并发下两个相同请求同时到达怎么办？"}]
+  }
+]

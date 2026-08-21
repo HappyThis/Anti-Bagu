@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anti-bagu.local/schemas/transcript-event.schema.json",
+  "title": "TranscriptEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "channel", "phase", "text", "utterance_id", "created_at"],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1},
+    "channel": {"enum": ["interviewer", "candidate"]},
+    "phase": {"enum": ["partial", "final"]},
+    "text": {"type": "string"},
+    "utterance_id": {"type": "string", "minLength": 1},
+    "audio_started_at": {"type": ["number", "null"]},
+    "audio_ended_at": {"type": ["number", "null"]},
+    "created_at": {"type": "number"}
+  }
+}

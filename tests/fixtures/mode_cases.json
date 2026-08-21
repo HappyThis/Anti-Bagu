@@ -1,0 +1,22 @@
+[
+  {"id":"fast_01","expected_mode":"FAST","question":"Redis 为什么快？"},
+  {"id":"fast_02","expected_mode":"FAST","question":"比较一下 RDB 和 AOF。"},
+  {"id":"fast_03","expected_mode":"FAST","question":"Java 的 volatile 有什么作用？"},
+  {"id":"fast_04","expected_mode":"FAST","question":"Java 线程池有哪些核心参数？"},
+  {"id":"fast_05","expected_mode":"FAST","question":"数据库的四种事务隔离级别是什么？"},
+  {"id":"fast_06","expected_mode":"FAST","question":"MySQL 索引为什么通常使用 B+ 树？"},
+  {"id":"fast_07","expected_mode":"FAST","question":"说一下 TCP 三次握手的过程。"},
+  {"id":"fast_08","expected_mode":"FAST","question":"HTTP/2 相比 HTTP/1.1 有哪些改进？"},
+  {"id":"fast_09","expected_mode":"FAST","question":"产生死锁的四个必要条件是什么？"},
+  {"id":"fast_10","expected_mode":"FAST","question":"解释一下分布式系统中的 CAP。"},
+  {"id":"think_01","expected_mode":"THINK","question":"9.9 和 9.11 哪个更大？请解释计算过程。"},
+  {"id":"think_02","expected_mode":"THINK","question":"下面 Java 表达式输出什么？int a=1; System.out.println(a++ + ++a);"},
+  {"id":"think_03","expected_mode":"THINK","question":"给定一个无序数组和 k，请写代码找出第 k 大元素，并分析复杂度。"},
+  {"id":"think_04","expected_mode":"THINK","question":"给定若干区间，请写代码合并所有重叠区间。"},
+  {"id":"think_05","expected_mode":"THINK","question":"设计一个日请求量十亿级的短链接系统，需要考虑发号、分片、缓存和容灾。"},
+  {"id":"think_06","expected_mode":"FAST","question":"这两个线程分别先锁 A 再锁 B、先锁 B 再锁 A，代码为什么会卡住？应该怎么修改？"},
+  {"id":"think_07","expected_mode":"THINK","question":"写一条 SQL，查询每个部门工资排名前三的员工。"},
+  {"id":"think_08","expected_mode":"THINK","question":"系统有一亿用户，日活 1%，每人每天 5 次请求，峰值是平均值的 8 倍，估算峰值 QPS。"},
+  {"id":"think_09","expected_mode":"THINK","question":"设计一个支付接口：两个相同请求可能同时到达，数据库也可能超时，如何保证幂等并正确重试？"},
+  {"id":"think_10","expected_mode":"FAST","question":"这段代码为什么可能空指针？String city = user.getAddress().getCity(); 请给出安全修改。"}
+]

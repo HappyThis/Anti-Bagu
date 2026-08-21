@@ -24,3 +24,50 @@ Anti-Bagu 是一个面向线上面试的 AI 助手。它通过理解面试现场
 ## 定位
 
 > 一个用 AI 对抗八股的线上面试助手。
+
+## V1 技术方案
+
+V1 采用本地优先的三端架构：
+
+```text
+Swift macOS 双路音频采集
+  → Python 异步实时核心
+  → React 本地 H5
+```
+
+- [V1 技术方案](docs/TECHNICAL_DESIGN_V1.md)
+- [项目结构](docs/PROJECT_STRUCTURE.md)
+- [模型与链路测试报告](docs/TEST_REPORT.md)
+- [Focus Token 预算实验](docs/FOCUS_TOKEN_BUDGET_REPORT.md)
+
+## 本地开发
+
+```bash
+make bootstrap
+make dev-backend
+make dev-web
+make dev-capture
+```
+
+不访问外部模型的测试：
+
+```bash
+make test
+```
+
+## 真实监听
+
+首次运行前，在 macOS“隐私与安全性”中允许 Codex/终端访问：
+
+- 屏幕与系统音频录制。
+- 麦克风。
+
+权限修改后需要完整重启 Codex。随后分别运行：
+
+```bash
+make dev-backend
+make dev-web
+make dev-capture
+```
+
+页面会显示两路真实声波，以及采集传输、ASR、模型和端到端延迟。系统音频映射为 `interviewer`，麦克风映射为 `candidate`。

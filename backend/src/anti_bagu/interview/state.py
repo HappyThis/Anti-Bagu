@@ -1,0 +1,8 @@
+from enum import StrEnum
+
+
+class SessionState(StrEnum):
+    LISTENING = "LISTENING"
+    EVALUATING = "EVALUATING"
+    ANSWERING_FAST = "ANSWERING_FAST"
+    ANSWERING_THINK = "ANSWERING_THINK"

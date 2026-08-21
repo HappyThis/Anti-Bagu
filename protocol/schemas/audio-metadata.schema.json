@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anti-bagu.local/schemas/audio-metadata.schema.json",
+  "title": "AudioMetadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sample_rate", "channels", "sample_format", "frame_duration_ms"],
+  "properties": {
+    "sample_rate": {"const": 16000},
+    "channels": {"const": 1},
+    "sample_format": {"const": "pcm_s16le"},
+    "frame_duration_ms": {"type": "integer", "minimum": 20, "maximum": 200}
+  }
+}

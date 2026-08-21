@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anti-bagu.local/schemas/realtime-event.schema.json",
+  "title": "RealtimeEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "event_id", "session_id", "conversation_revision", "created_at", "payload"],
+  "properties": {
+    "type": {"type": "string", "minLength": 1},
+    "event_id": {"type": "string", "minLength": 1},
+    "session_id": {"type": "string", "minLength": 1},
+    "conversation_revision": {"type": "integer", "minimum": 0},
+    "created_at": {"type": "number"},
+    "payload": {"type": "object"}
+  }
+}

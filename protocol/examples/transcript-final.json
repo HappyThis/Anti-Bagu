@@ -1,0 +1,10 @@
+{
+  "event_id": "example-transcript-1",
+  "channel": "interviewer",
+  "phase": "final",
+  "text": "Redis 为什么这么快？",
+  "utterance_id": "example-utterance-1",
+  "audio_started_at": 0,
+  "audio_ended_at": 1.2,
+  "created_at": 1.9
+}
