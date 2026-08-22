@@ -51,9 +51,29 @@ echo "$ARTIFACT_SHA256  $UPLOADED_ARTIFACT" | sha256sum --check --status
 install -d -m 0755 -o antibagu -g antibagu \
   "$DEPLOY_ROOT" "$RELEASES" "$STAGING_ROOT" "$FAILED" "$LEGACY" "$ARTIFACTS"
 
+retry() {
+  local attempt
+  for attempt in $(seq 1 3); do
+    if "$@"; then
+      return 0
+    fi
+    if [[ $attempt -lt 3 ]]; then
+      echo "GitHub 连接失败，2 秒后进行第 $((attempt + 1)) 次尝试。" >&2
+      sleep 2
+    fi
+  done
+  return 1
+}
+
+clone_repository() {
+  if [[ -e "$REPOSITORY" ]]; then
+    mv "$REPOSITORY" "$FAILED/repository-$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
+  fi
+  sudo -u antibagu git clone --no-checkout "$REPOSITORY_URL" "$REPOSITORY"
+}
+
 if [[ ! -d "$REPOSITORY/.git" ]]; then
-  sudo -u antibagu git clone --filter=blob:none --no-checkout \
-    "$REPOSITORY_URL" "$REPOSITORY"
+  retry clone_repository
 else
   CONFIGURED_URL="$(sudo -u antibagu git -C "$REPOSITORY" remote get-url origin)"
   if [[ "$CONFIGURED_URL" != "$REPOSITORY_URL" ]]; then
@@ -62,7 +82,7 @@ else
   fi
 fi
 
-sudo -u antibagu git -C "$REPOSITORY" fetch --prune origin
+retry sudo -u antibagu git -C "$REPOSITORY" fetch --prune origin
 sudo -u antibagu git -C "$REPOSITORY" cat-file -e "$COMMIT^{commit}"
 
 if [[ -e "$RELEASE" ]]; then
