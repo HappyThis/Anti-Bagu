@@ -145,9 +145,7 @@ export function TaskWorkspacePage() {
       </header>
 
       <div className="prep-steps" aria-label="面试准备步骤">
-        <PreparationStep number={1} title="打开电脑助手" description="下载并打开后会自动连接，无需了解复杂设置。" icon={<Desktop size={34} />} active={currentStep === 1} complete={computerReady}>
-          {!computerReady ? <a className="primary-action prep-download" href="/downloads/anti-bagu-agent-macos-arm64.tar.gz" download><DownloadSimple size={19} />下载电脑助手</a> : null}
-        </PreparationStep>
+        <PreparationStep number={1} title="打开电脑助手" description="下载并打开后会自动连接，无需了解复杂设置。" icon={<Desktop size={34} />} active={currentStep === 1} complete={computerReady} />
 
         <PreparationStep number={2} title="确认可以听清" description="确认面试声音、你的声音和回答功能都能正常使用。" icon={<Headphones size={34} />} active={currentStep === 2} complete={soundReady} locked={!computerReady}>
           {computerReady && !ready ? <button className="primary-action prep-confirm" type="button" onClick={() => void confirmReadiness()} disabled={checking}>{checking ? <><ArrowClockwise className="spin" size={19} />正在确认…</> : '开始确认'}</button> : null}
@@ -202,7 +200,7 @@ function PreparationStep({
       <span className="prep-step-number">{number}</span>
       <h2>{title}</h2>
       <p>{description}</p>
-      <div className="prep-step-action">{children}</div>
+      {children ? <div className="prep-step-action">{children}</div> : null}
     </article>
   )
 }

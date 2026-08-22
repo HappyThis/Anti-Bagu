@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle, DownloadSimple, Play } from '@phosphor-icons/react'
+import { ArrowLeft, CheckCircle, DownloadSimple } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
@@ -39,7 +39,7 @@ export function ReviewDetailPage() {
       .finally(() => setLoading(false))
   }, [reviewId, session])
 
-  const timeline = useMemo(() => events.filter((event) => DISPLAYED_EVENTS.has(event.event_type)), [events])
+  const timeline = useMemo(() => visibleTimeline(events), [events])
   const focuses = events.filter((event) => event.event_type === 'focus.updated')
   const answers = events.filter((event) => event.event_type === 'answer.completed')
   const interrupted = events.filter((event) => event.event_type === 'answer.cancelled')
@@ -65,7 +65,7 @@ export function ReviewDetailPage() {
         <span><small>记录状态</small><strong>{events.length ? '完整' : '—'}</strong><em><CheckCircle size={13} weight="fill" />可以查看</em></span>
       </div>
 
-      <div className="review-layout">
+      <div className="review-layout review-layout--single">
         <div className="timeline-panel">
           <header><h2>面试过程</h2><span>{timeline.length} 条记录</span></header>
           {timeline.map((event) => {
@@ -80,24 +80,37 @@ export function ReviewDetailPage() {
           })}
           {!loading && timeline.length === 0 ? <div className="table-empty-state"><strong>暂无面试内容</strong><span>面试中的问题和回答会显示在这里。</span></div> : null}
         </div>
-        <aside className="audio-review-panel">
-          <span className="side-panel-label">声音回放</span>
-          <h2>面试录音</h2>
-          <p>选择一方的声音进行回放。</p>
-          <button className="audio-track" type="button"><Play size={18} weight="fill" /><span>面试官声音</span><b>播放</b></button>
-          <button className="audio-track audio-track--candidate" type="button"><Play size={18} weight="fill" /><span>我的声音</span><b>播放</b></button>
-          <hr />
-          <h3>已经保存</h3>
-          <dl>
-            <div><dt>问题</dt><dd>面试官提出的问题</dd></div>
-            <div><dt>对话</dt><dd>面试官和你的发言</dd></div>
-            <div><dt>回答</dt><dd>当时显示的建议回答</dd></div>
-          </dl>
-          <div className="review-integrity"><CheckCircle size={18} weight="fill" /><span><strong>记录已保存</strong><small>你可以随时返回查看</small></span></div>
-        </aside>
       </div>
     </section>
   )
+}
+
+function visibleTimeline(events: TaskEventRecord[]) {
+  const interviewerFinals: Array<{ text: string; at: number }> = []
+  const visible: TaskEventRecord[] = []
+  for (const event of events) {
+    if (event.event_type === 'transcript.final') {
+      const channel = String(event.payload.channel ?? '')
+      const text = normalizeTranscript(String(event.payload.text ?? ''))
+      const at = new Date(event.created_at).getTime()
+      if (channel === 'interviewer') {
+        interviewerFinals.push({ text, at })
+        if (interviewerFinals.length > 12) interviewerFinals.shift()
+      } else if (
+        channel === 'candidate'
+        && text.length >= 4
+        && interviewerFinals.some((reference) => reference.text === text && Math.abs(at - reference.at) <= 3000)
+      ) {
+        continue
+      }
+    }
+    if (DISPLAYED_EVENTS.has(event.event_type)) visible.push(event)
+  }
+  return visible
+}
+
+function normalizeTranscript(text: string) {
+  return text.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 }
 
 function eventView(event: TaskEventRecord) {

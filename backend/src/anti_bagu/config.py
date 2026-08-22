@@ -37,6 +37,7 @@ class Settings:
     focus_debounce_ms: int = 300
     focus_max_coalesce_ms: int = 1_200
     focus_timeout_seconds: float = 5.0
+    echo_suppression_window_seconds: float = 3.0
     audit_log_dir: Path = REPO_ROOT / ".runtime" / "logs"
     audit_include_text: bool = False
     audit_ring_size: int = 1_000
@@ -127,6 +128,9 @@ class Settings:
             ),
             focus_timeout_seconds=float(
                 os.environ.get("ANTIBAGU_FOCUS_TIMEOUT_SECONDS", "5")
+            ),
+            echo_suppression_window_seconds=float(
+                os.environ.get("ANTIBAGU_ECHO_SUPPRESSION_SECONDS", "3")
             ),
             audit_log_dir=audit_log_dir,
             audit_include_text=os.environ.get(

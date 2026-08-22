@@ -32,13 +32,19 @@ def transcript(
     text: str,
     *,
     utterance_id: str = "utterance-1",
+    audio_ended_at: float | None = None,
+    created_at: float | None = None,
 ) -> TranscriptEvent:
-    return TranscriptEvent(
-        channel=channel,
-        phase=phase,
-        text=text,
-        utterance_id=utterance_id,
-    )
+    values = {
+        "channel": channel,
+        "phase": phase,
+        "text": text,
+        "utterance_id": utterance_id,
+        "audio_ended_at": audio_ended_at,
+    }
+    if created_at is not None:
+        values["created_at"] = created_at
+    return TranscriptEvent.model_validate(values)
 
 
 def coordinator(
@@ -86,6 +92,106 @@ async def test_candidate_final_is_stored_without_triggering_focus() -> None:
     assert [(turn.turn_id, turn.text) for turn in subject.store.turns] == [
         (1, "我先说一下自己的理解")
     ]
+
+
+@pytest.mark.asyncio
+async def test_candidate_echo_of_recent_interviewer_is_suppressed() -> None:
+    responder = FakeFocusResponder(wait_result())
+    sink = MemoryEventSink()
+    subject = coordinator(responder, sink=sink)
+
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "OpenClaw 的架构是怎样的？",
+            utterance_id="interviewer-echo-source",
+            audio_ended_at=100.0,
+            created_at=101.0,
+        )
+    )
+    await subject.handle_transcript(
+        transcript(
+            Channel.CANDIDATE,
+            TranscriptPhase.FINAL,
+            "OpenClaw的架构是怎样的。",
+            utterance_id="candidate-echo",
+            audio_ended_at=100.4,
+            created_at=102.0,
+        )
+    )
+    await subject.wait_idle()
+
+    assert [(turn.channel, turn.text) for turn in subject.store.turns] == [
+        (Channel.INTERVIEWER, "OpenClaw 的架构是怎样的？")
+    ]
+    assert [event.type for event in sink.events].count("transcript.final") == 1
+    suppressed = next(
+        event for event in sink.events if event.type == "transcript.echo_suppressed"
+    )
+    assert suppressed.payload["channel"] == "candidate"
+    assert suppressed.payload["similarity"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_distinct_candidate_speech_is_not_suppressed() -> None:
+    responder = FakeFocusResponder(wait_result())
+    subject = coordinator(responder)
+
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "OpenClaw 的架构是怎样的？",
+            audio_ended_at=100.0,
+            created_at=101.0,
+        )
+    )
+    await subject.handle_transcript(
+        transcript(
+            Channel.CANDIDATE,
+            TranscriptPhase.FINAL,
+            "我会从模块划分和消息流开始回答。",
+            utterance_id="candidate-answer",
+            audio_ended_at=100.5,
+            created_at=102.0,
+        )
+    )
+    await subject.wait_idle()
+
+    assert [turn.channel for turn in subject.store.turns] == [
+        Channel.INTERVIEWER,
+        Channel.CANDIDATE,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_same_candidate_text_outside_echo_window_is_kept() -> None:
+    responder = FakeFocusResponder(wait_result())
+    subject = coordinator(responder)
+
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "Redis 为什么快？",
+            audio_ended_at=100.0,
+            created_at=101.0,
+        )
+    )
+    await subject.handle_transcript(
+        transcript(
+            Channel.CANDIDATE,
+            TranscriptPhase.FINAL,
+            "Redis为什么快？",
+            utterance_id="candidate-later",
+            audio_ended_at=104.0,
+            created_at=105.0,
+        )
+    )
+    await subject.wait_idle()
+
+    assert len(subject.store.turns) == 2
 
 
 @pytest.mark.asyncio
