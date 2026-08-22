@@ -96,6 +96,7 @@ class InterviewCoordinator:
                     "matched_interviewer_event_id": echo.interviewer_event_id,
                     "similarity": echo.similarity,
                     "delay_ms": echo.delay_seconds * 1000,
+                    "audio_overlap_ratio": echo.overlap_ratio,
                 },
             )
             return

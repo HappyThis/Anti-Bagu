@@ -32,6 +32,7 @@ def transcript(
     text: str,
     *,
     utterance_id: str = "utterance-1",
+    audio_started_at: float | None = None,
     audio_ended_at: float | None = None,
     created_at: float | None = None,
 ) -> TranscriptEvent:
@@ -40,6 +41,7 @@ def transcript(
         "phase": phase,
         "text": text,
         "utterance_id": utterance_id,
+        "audio_started_at": audio_started_at,
         "audio_ended_at": audio_ended_at,
     }
     if created_at is not None:
@@ -106,6 +108,7 @@ async def test_candidate_echo_of_recent_interviewer_is_suppressed() -> None:
             TranscriptPhase.FINAL,
             "OpenClaw 的架构是怎样的？",
             utterance_id="interviewer-echo-source",
+            audio_started_at=98.0,
             audio_ended_at=100.0,
             created_at=101.0,
         )
@@ -116,6 +119,7 @@ async def test_candidate_echo_of_recent_interviewer_is_suppressed() -> None:
             TranscriptPhase.FINAL,
             "OpenClaw的架构是怎样的。",
             utterance_id="candidate-echo",
+            audio_started_at=98.1,
             audio_ended_at=100.4,
             created_at=102.0,
         )
@@ -131,6 +135,37 @@ async def test_candidate_echo_of_recent_interviewer_is_suppressed() -> None:
     )
     assert suppressed.payload["channel"] == "candidate"
     assert suppressed.payload["similarity"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_overlapping_echo_with_different_technical_term_transcript_is_suppressed() -> None:
+    responder = FakeFocusResponder(wait_result())
+    subject = coordinator(responder)
+
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "知道 MySQL 吗？",
+            audio_started_at=200.0,
+            audio_ended_at=201.2,
+            created_at=202.0,
+        )
+    )
+    await subject.handle_transcript(
+        transcript(
+            Channel.CANDIDATE,
+            TranscriptPhase.FINAL,
+            "知道 Miss 豆吗？",
+            utterance_id="candidate-asr-variant",
+            audio_started_at=200.1,
+            audio_ended_at=201.3,
+            created_at=203.0,
+        )
+    )
+    await subject.wait_idle()
+
+    assert [turn.channel for turn in subject.store.turns] == [Channel.INTERVIEWER]
 
 
 @pytest.mark.asyncio

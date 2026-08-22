@@ -12,6 +12,7 @@ class EchoMatch:
     interviewer_event_id: str
     similarity: float
     delay_seconds: float
+    overlap_ratio: float
 
 
 class CrossChannelEchoSuppressor:
@@ -49,17 +50,43 @@ class CrossChannelEchoSuppressor:
                 if candidate == reference
                 else SequenceMatcher(None, candidate, reference).ratio()
             )
-            if length_ratio >= 0.8 and similarity >= self._similarity:
+            overlap_ratio = self._overlap_ratio(interviewer, event)
+            strong_text_match = length_ratio >= 0.8 and similarity >= self._similarity
+            overlapping_audio_match = (
+                overlap_ratio >= 0.6 and length_ratio >= 0.65 and similarity >= 0.6
+            )
+            if strong_text_match or overlapping_audio_match:
                 return EchoMatch(
                     interviewer_event_id=interviewer.event_id,
                     similarity=similarity,
                     delay_seconds=delay,
+                    overlap_ratio=overlap_ratio,
                 )
         return None
 
     @staticmethod
     def _audio_time(event: TranscriptEvent) -> float:
         return event.audio_ended_at if event.audio_ended_at is not None else event.created_at
+
+    @staticmethod
+    def _overlap_ratio(first: TranscriptEvent, second: TranscriptEvent) -> float:
+        if (
+            first.audio_started_at is None
+            or first.audio_ended_at is None
+            or second.audio_started_at is None
+            or second.audio_ended_at is None
+        ):
+            return 0.0
+        overlap = max(
+            0.0,
+            min(first.audio_ended_at, second.audio_ended_at)
+            - max(first.audio_started_at, second.audio_started_at),
+        )
+        shorter = min(
+            first.audio_ended_at - first.audio_started_at,
+            second.audio_ended_at - second.audio_started_at,
+        )
+        return overlap / shorter if shorter > 0 else 0.0
 
     @staticmethod
     def _normalize(text: str) -> str:
