@@ -66,7 +66,7 @@ sudo -u antibagu git -C "$REPOSITORY" fetch --prune origin
 sudo -u antibagu git -C "$REPOSITORY" cat-file -e "$COMMIT^{commit}"
 
 if [[ -e "$RELEASE" ]]; then
-  echo "版本已经存在：$RELEASE。请使用 rollback-release.sh 切换已有版本。" >&2
+  echo "版本已经存在：${RELEASE}。请使用 rollback-release.sh 切换已有版本。" >&2
   exit 1
 fi
 

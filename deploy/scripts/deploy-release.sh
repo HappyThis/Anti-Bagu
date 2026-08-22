@@ -21,11 +21,11 @@ fi
 
 REMOTE_COMMIT="$(git ls-remote origin "refs/heads/$BRANCH" | awk 'NR == 1 { print $1 }')"
 if [[ "$REMOTE_COMMIT" != "$COMMIT" ]]; then
-  echo "拒绝部署：origin/$BRANCH 不是当前 commit $COMMIT，请先推送代码。" >&2
+  echo "拒绝部署：origin/${BRANCH} 不是当前 commit ${COMMIT}，请先推送代码。" >&2
   exit 1
 fi
 
-echo "准备发布 $COMMIT（$BRANCH）"
+echo "准备发布 ${COMMIT}（${BRANCH}）"
 npm --prefix apps/web run build
 make package-agent
 
