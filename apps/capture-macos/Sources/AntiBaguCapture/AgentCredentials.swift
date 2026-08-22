@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 struct AgentConfiguration: Codable, Sendable {
     let serverURL: URL
@@ -19,83 +18,67 @@ struct AgentConfiguration: Codable, Sendable {
     }
 
     func save() throws {
-        let directory = Self.fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(
+        try SecureLocalFile.write(try JSONEncoder().encode(self), to: Self.fileURL)
+    }
+}
+
+struct AgentSession: Codable, Sendable {
+    let token: String
+    let expiresAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case token
+        case expiresAt = "expires_at"
+    }
+
+    static var fileURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".anti-bagu", directoryHint: .isDirectory)
+            .appending(path: "session.json")
+    }
+
+    static func load(from url: URL = fileURL) throws -> AgentSession? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let session = try JSONDecoder().decode(
+            AgentSession.self,
+            from: Data(contentsOf: url)
+        )
+        return session.isValid ? session : nil
+    }
+
+    func save(to url: URL = Self.fileURL) throws {
+        try SecureLocalFile.write(try JSONEncoder().encode(self), to: url)
+    }
+
+    var isValid: Bool {
+        !token.isEmpty && expirationDate.map { $0 > Date() } == true
+    }
+
+    private var expirationDate: Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let value = fractional.date(from: expiresAt) { return value }
+        return ISO8601DateFormatter().date(from: expiresAt)
+    }
+}
+
+private enum SecureLocalFile {
+    static func write(_ data: Data, to url: URL) throws {
+        let fileManager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        try fileManager.createDirectory(
             at: directory,
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        let data = try JSONEncoder().encode(self)
-        try data.write(to: Self.fileURL, options: .atomic)
-        try FileManager.default.setAttributes(
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: directory.path
+        )
+        try data.write(to: url, options: .atomic)
+        try fileManager.setAttributes(
             [.posixPermissions: 0o600],
-            ofItemAtPath: Self.fileURL.path
+            ofItemAtPath: url.path
         )
     }
-}
-
-enum AgentSecret: String {
-    case agentToken = "agent-token"
-    // Removed from the product flow; retained only so newer builds can erase old entries.
-    case dashscopeAPIKey = "dashscope-api-key"
-    case deepseekAPIKey = "deepseek-api-key"
-}
-
-enum KeychainStore {
-    private static let service = "cn.anti-bagu.agent"
-
-    static func save(_ value: String, for secret: AgentSecret) throws {
-        let data = Data(value.utf8)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: secret.rawValue,
-        ]
-        SecItemDelete(query as CFDictionary)
-        var item = query
-        item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(item as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw AgentCredentialError.keychain(status)
-        }
-    }
-
-    static func load(_ secret: AgentSecret) throws -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: secret.rawValue,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let value = String(data: data, encoding: .utf8)
-        else {
-            throw AgentCredentialError.keychain(status)
-        }
-        return value
-    }
-
-    static func delete(_ secret: AgentSecret) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: secret.rawValue,
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw AgentCredentialError.keychain(status)
-        }
-    }
-}
-
-enum AgentCredentialError: Error {
-    case keychain(OSStatus)
-    case missingConfiguration
-    case invalidServerURL
 }

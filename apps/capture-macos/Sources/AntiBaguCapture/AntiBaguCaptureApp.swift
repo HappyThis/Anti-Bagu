@@ -7,8 +7,6 @@ struct AntiBaguCaptureApp {
     static func main() async {
         let arguments = Array(CommandLine.arguments.dropFirst())
         let command = arguments.first ?? "start"
-        try? KeychainStore.delete(.dashscopeAPIKey)
-        try? KeychainStore.delete(.deepseekAPIKey)
         do {
             switch command {
             case "login":
@@ -44,10 +42,10 @@ struct AntiBaguCaptureApp {
 
     private static func showStatus() throws {
         let configuration = try? AgentConfiguration.load()
-        let token = try KeychainStore.load(.agentToken)
+        let session = try AgentSession.load()
         print("服务：\(configuration?.serverURL.absoluteString ?? "未配置")")
         print("用户：\(configuration?.username ?? "未登录")")
-        print("登录状态：\(token == nil ? "未登录" : "已登录")")
+        print("登录状态：\(session == nil ? "未登录" : "已登录")")
         print("回声消除：\(AEC3NativeProcessor.isAvailable() ? "已准备" : "缺少组件")")
         let permissions = CapturePermissions.current()
         print("面试声音：\(permissions.screenCaptureGranted ? "已允许" : "需要允许")")
@@ -106,9 +104,9 @@ struct AntiBaguCaptureApp {
 
     private static func ensureAccount() async throws -> (AgentConfiguration, String) {
         if let configuration = try? AgentConfiguration.load(),
-           let token = try KeychainStore.load(.agentToken)
+           let session = try AgentSession.load()
         {
-            return (configuration, token)
+            return (configuration, session.token)
         }
 
         print("""
@@ -147,15 +145,21 @@ struct AntiBaguCaptureApp {
             switch result.status {
             case "approved":
                 guard let token = result.token,
+                      let tokenExpiresAt = result.tokenExpiresAt,
                       let username = result.username,
                       !token.isEmpty,
+                      !tokenExpiresAt.isEmpty,
                       !username.isEmpty
                 else {
                     throw CLIError.usage("登录结果不完整，请重新登录")
                 }
                 let configuration = AgentConfiguration(serverURL: serverURL, username: username)
+                let session = AgentSession(token: token, expiresAt: tokenExpiresAt)
+                guard session.isValid else {
+                    throw CLIError.usage("登录结果已过期，请重新登录")
+                }
                 try configuration.save()
-                try KeychainStore.save(token, for: .agentToken)
+                try session.save()
                 print("登录成功，账号：\(username)。")
                 return (configuration, token)
             case "expired":
@@ -206,7 +210,7 @@ struct AntiBaguCaptureApp {
           anti-bagu-agent status       查看当前准备状态
           anti-bagu-agent login        更换登录账号
 
-        登录凭据保存在 macOS 系统钥匙串中；模型服务密钥请在网页“设置”中管理。
+        登录凭据保存在 ~/.anti-bagu/session.json；模型服务密钥请在网页“设置”中管理。
         """)
     }
 }
