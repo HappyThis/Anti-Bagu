@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from anti_bagu.api.app import create_app
 from anti_bagu.config import Settings
+from anti_bagu.credentials.service import ModelCredentials
 from anti_bagu.persistence.models import UserModelCredentials
 from anti_bagu.tasks.model_verifier import VerificationResult
 
@@ -330,3 +331,76 @@ def test_model_credentials_are_configured_in_web_and_encrypted_at_rest(tmp_path)
         )
         assert stored.dashscope_api_key == "dashscope-secret-value"
         assert stored.deepseek_api_key == "updated-deepseek-secret"
+
+
+def test_preflight_requires_aec3_capable_agent(tmp_path) -> None:
+    app = create_app(cloud_settings(tmp_path))
+    with TestClient(app) as client:
+        admin = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-horse-battery"},
+        ).json()
+        key = client.post(
+            "/api/v1/admin/activation-keys",
+            headers=bearer(admin["token"]),
+            json={},
+        ).json()["display_key"]
+        registration = client.post(
+            "/api/v1/auth/register",
+            json={
+                "activation_key": key,
+                "username": "aec.owner",
+                "password": "strong-password",
+            },
+        ).json()
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "aec.owner", "password": "strong-password"},
+        ).json()
+        task = client.post(
+            "/api/v1/tasks",
+            headers=bearer(login["token"]),
+            json={"name": "AEC3 检查", "mobile_required": False},
+        ).json()
+
+        assert client.portal is not None
+        client.portal.call(
+            app.state.model_credential_service.save,
+            registration["id"],
+            ModelCredentials(
+                dashscope_api_key="dashscope-secret-value",
+                deepseek_api_key="deepseek-secret-value",
+            ),
+        )
+        app.state.task_service._verifier = SuccessfulModelVerifier()
+        app.state.agent_hub.is_connected = lambda _: True
+
+        async def old_agent_preflight(*_):
+            return {
+                "permissions": {"screen_capture": True, "microphone": True},
+                "audio_processing": {},
+            }
+
+        app.state.agent_hub.request_preflight = old_agent_preflight
+        rejected = client.post(
+            f"/api/v1/tasks/{task['id']}/preflight",
+            headers=bearer(login["token"]),
+        ).json()
+        aec_check = next(check for check in rejected["checks"] if check["key"] == "aec3")
+        assert aec_check["ok"] is False
+        assert rejected["ready"] is False
+
+        async def new_agent_preflight(*_):
+            return {
+                "permissions": {"screen_capture": True, "microphone": True},
+                "audio_processing": {"aec3": True},
+            }
+
+        app.state.agent_hub.request_preflight = new_agent_preflight
+        accepted = client.post(
+            f"/api/v1/tasks/{task['id']}/preflight",
+            headers=bearer(login["token"]),
+        ).json()
+        aec_check = next(check for check in accepted["checks"] if check["key"] == "aec3")
+        assert aec_check["ok"] is True
+        assert accepted["ready"] is True
