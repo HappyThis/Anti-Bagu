@@ -17,6 +17,7 @@ from anti_bagu.asr.qwen_streaming import QwenStreamingASRSession
 from anti_bagu.audio.protocol import AudioFramePacket, AudioMetadata, pcm_level
 from anti_bagu.auth.service import AuthService
 from anti_bagu.config import Settings
+from anti_bagu.credentials.service import CredentialCipher, ModelCredentialService
 from anti_bagu.interview.context import FocusPromptBuilder, TokenEstimator
 from anti_bagu.interview.coordinator import InterviewCoordinator
 from anti_bagu.interview.events import Channel, RealtimeEvent, TranscriptEvent
@@ -57,6 +58,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     agent_hub = AgentHub()
     agent_authorizations = AgentAuthorizationHub()
     mobile_hub = MobileHub()
+    model_credential_service = ModelCredentialService(
+        session_factory,
+        CredentialCipher(active_settings.credential_key_path),
+    )
+    model_verifier = ModelVerifier(active_settings)
     runtime_registry = RuntimeRegistry(
         active_settings, session_factory, audit
     )
@@ -66,7 +72,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         agent_hub,
         mobile_hub,
         runtime_registry,
-        ModelVerifier(active_settings),
+        model_verifier,
+        model_credential_service,
     )
 
     if active_settings.deepseek_api_key:
@@ -146,6 +153,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.database_engine = database_engine
     app.state.session_factory = session_factory
     app.state.auth_service = auth_service
+    app.state.model_credential_service = model_credential_service
+    app.state.model_verifier = model_verifier
     app.state.agent_hub = agent_hub
     app.state.agent_authorizations = agent_authorizations
     app.state.mobile_hub = mobile_hub

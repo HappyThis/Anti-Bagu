@@ -14,6 +14,7 @@ Server paths:
 ```text
 /opt/anti-bagu                         application release
 /etc/anti-bagu/anti-bagu.env          root-only runtime configuration
+/var/lib/anti-bagu/credential-encryption.key  server-generated model-key encryption key
 /var/lib/anti-bagu/logs                daily platform logs
 /var/lib/anti-bagu/storage/tasks       task events and audio
 ```

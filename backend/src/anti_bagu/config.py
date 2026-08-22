@@ -43,6 +43,7 @@ class Settings:
     audit_queue_size: int = 4_096
     database_url: str = f"sqlite+aiosqlite:///{REPO_ROOT / '.runtime' / 'anti_bagu.db'}"
     storage_dir: Path = REPO_ROOT / ".runtime" / "storage"
+    credential_key_path: Path = REPO_ROOT / ".runtime" / "credential-encryption.key"
     public_base_url: str = "http://127.0.0.1:5174"
     cors_origins: tuple[str, ...] = (
         "http://127.0.0.1:5173",
@@ -71,6 +72,14 @@ class Settings:
         ).expanduser()
         if not storage_dir.is_absolute():
             storage_dir = REPO_ROOT / storage_dir
+        credential_key_path = Path(
+            os.environ.get(
+                "ANTIBAGU_CREDENTIAL_KEY_PATH",
+                str(storage_dir.parent / "credential-encryption.key"),
+            )
+        ).expanduser()
+        if not credential_key_path.is_absolute():
+            credential_key_path = REPO_ROOT / credential_key_path
         default_database = f"sqlite+aiosqlite:///{REPO_ROOT / '.runtime' / 'anti_bagu.db'}"
         cors_origins = tuple(
             origin.strip()
@@ -128,6 +137,7 @@ class Settings:
             audit_queue_size=int(os.environ.get("ANTIBAGU_LOG_QUEUE_SIZE", "4096")),
             database_url=os.environ.get("ANTIBAGU_DATABASE_URL", default_database),
             storage_dir=storage_dir,
+            credential_key_path=credential_key_path,
             public_base_url=os.environ.get(
                 "ANTIBAGU_PUBLIC_BASE_URL", "http://127.0.0.1:5174"
             ).rstrip("/"),

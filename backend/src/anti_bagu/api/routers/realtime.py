@@ -294,7 +294,7 @@ async def _upsert_device(
         device.metadata_json = {
             key: value
             for key, value in payload.items()
-            if key not in {"model_credentials", "token", "api_key"}
+            if key not in {"token", "api_key"}
         }
         await session.commit()
 

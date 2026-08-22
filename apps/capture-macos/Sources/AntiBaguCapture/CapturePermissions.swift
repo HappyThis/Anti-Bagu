@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import CoreGraphics
 
@@ -28,5 +29,32 @@ struct CapturePermissions: Sendable {
             screenCaptureGranted: screenGranted,
             microphoneGranted: microphoneGranted
         )
+    }
+
+    static func openScreenCaptureSettings() async -> Bool {
+        await openSettings(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        )
+    }
+
+    static func openMicrophoneSettings() async -> Bool {
+        await openSettings(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+        )
+    }
+
+    static var permissionOwnerHint: String {
+        switch ProcessInfo.processInfo.environment["TERM_PROGRAM"] {
+        case "Apple_Terminal": "终端（Terminal）"
+        case "iTerm.app": "iTerm"
+        case "WarpTerminal": "Warp"
+        default: "anti-bagu-agent 或启动它的终端"
+        }
+    }
+
+    @MainActor
+    private static func openSettings(_ value: String) -> Bool {
+        guard let url = URL(string: value) else { return false }
+        return NSWorkspace.shared.open(url)
     }
 }

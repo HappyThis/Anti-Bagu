@@ -39,6 +39,11 @@ class AgentAuthorizationPollRequest(BaseModel):
     device_secret: str = Field(min_length=32, max_length=256)
 
 
+class ModelCredentialUpdateRequest(BaseModel):
+    dashscope_api_key: str | None = Field(default=None, min_length=8, max_length=512)
+    deepseek_api_key: str | None = Field(default=None, min_length=8, max_length=512)
+
+
 class CreateTaskRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     mode: Literal["interview", "practice"] = "interview"

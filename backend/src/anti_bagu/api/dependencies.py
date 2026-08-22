@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from fastapi import Depends, Header, HTTPException, Request, status
 
 from anti_bagu.auth.service import AuthService
+from anti_bagu.credentials.service import ModelCredentialService
 from anti_bagu.persistence.models import User
 
 
@@ -21,6 +22,10 @@ async def get_db(request: Request):
 
 def get_auth_service(request: Request) -> AuthService:
     return request.app.state.auth_service
+
+
+def get_model_credential_service(request: Request) -> ModelCredentialService:
+    return request.app.state.model_credential_service
 
 
 async def current_principal(

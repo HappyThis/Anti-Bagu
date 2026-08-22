@@ -36,6 +36,7 @@ struct AgentConfiguration: Codable, Sendable {
 
 enum AgentSecret: String {
     case agentToken = "agent-token"
+    // Removed from the product flow; retained only so newer builds can erase old entries.
     case dashscopeAPIKey = "dashscope-api-key"
     case deepseekAPIKey = "deepseek-api-key"
 }
@@ -78,6 +79,18 @@ enum KeychainStore {
             throw AgentCredentialError.keychain(status)
         }
         return value
+    }
+
+    static func delete(_ secret: AgentSecret) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: secret.rawValue,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw AgentCredentialError.keychain(status)
+        }
     }
 }
 

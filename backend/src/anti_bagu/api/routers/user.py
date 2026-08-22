@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,8 +10,14 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from anti_bagu.api.dependencies import Principal, current_principal, get_db
-from anti_bagu.api.schemas import DeviceView
+from anti_bagu.api.dependencies import (
+    Principal,
+    current_principal,
+    get_db,
+    get_model_credential_service,
+)
+from anti_bagu.api.schemas import DeviceView, ModelCredentialUpdateRequest
+from anti_bagu.credentials.service import ModelCredentials, ModelCredentialService
 from anti_bagu.persistence.audio_archive import wav_header
 from anti_bagu.persistence.models import AgentDevice, Task, TaskEvent
 
@@ -137,18 +144,71 @@ async def devices(
 async def model_status(
     request: Request,
     principal: Principal = Depends(current_principal),
+    credentials: ModelCredentialService = Depends(get_model_credential_service),
 ):
     connection = request.app.state.agent_hub.get(principal.user.id)
-    models = connection.device.get("models", {}) if connection is not None else {}
+    configured = await credentials.configured(principal.user.id)
     return {
         "agent_connected": connection is not None,
         "asr": {
             "name": request.app.state.settings.asr_model,
-            "configured": bool(models.get("asr_configured")),
+            "configured": configured,
         },
         "llm": {
             "name": request.app.state.settings.deepseek_model,
-            "configured": bool(models.get("llm_configured")),
+            "configured": configured,
         },
-        "storage": "macOS Keychain",
+        "storage": "服务器加密保存",
+    }
+
+
+@router.put("/model-credentials")
+async def update_model_credentials(
+    payload: ModelCredentialUpdateRequest,
+    request: Request,
+    principal: Principal = Depends(current_principal),
+    credentials: ModelCredentialService = Depends(get_model_credential_service),
+):
+    existing = await credentials.get(principal.user.id)
+    dashscope_key = (
+        payload.dashscope_api_key.strip()
+        if payload.dashscope_api_key is not None
+        else existing.dashscope_api_key if existing else ""
+    )
+    deepseek_key = (
+        payload.deepseek_api_key.strip()
+        if payload.deepseek_api_key is not None
+        else existing.deepseek_api_key if existing else ""
+    )
+    if not dashscope_key or not deepseek_key:
+        raise HTTPException(status_code=400, detail="请完整填写两项服务密钥")
+
+    asr_result, llm_result = await asyncio.gather(
+        request.app.state.model_verifier.verify_asr(dashscope_key),
+        request.app.state.model_verifier.verify_llm(deepseek_key),
+    )
+    failures = [result.detail for result in (asr_result, llm_result) if not result.ok]
+    if failures:
+        raise HTTPException(status_code=400, detail="；".join(failures))
+
+    await credentials.save(
+        principal.user.id,
+        ModelCredentials(
+            dashscope_api_key=dashscope_key,
+            deepseek_api_key=deepseek_key,
+        ),
+    )
+    return {
+        "saved": True,
+        "asr": {
+            "name": request.app.state.settings.asr_model,
+            "configured": True,
+            "latency_ms": asr_result.latency_ms,
+        },
+        "llm": {
+            "name": request.app.state.settings.deepseek_model,
+            "configured": True,
+            "latency_ms": llm_result.latency_ms,
+        },
+        "storage": "服务器加密保存",
     }

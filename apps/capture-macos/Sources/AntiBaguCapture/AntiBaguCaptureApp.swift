@@ -7,12 +7,12 @@ struct AntiBaguCaptureApp {
     static func main() async {
         let arguments = Array(CommandLine.arguments.dropFirst())
         let command = arguments.first ?? "start"
+        try? KeychainStore.delete(.dashscopeAPIKey)
+        try? KeychainStore.delete(.deepseekAPIKey)
         do {
             switch command {
             case "login":
                 try await login(arguments: Array(arguments.dropFirst()))
-            case "configure-models":
-                try configureModels()
             case "status":
                 try showStatus()
             case "start":
@@ -42,27 +42,12 @@ struct AntiBaguCaptureApp {
         _ = try await browserLogin(serverURL: serverURL)
     }
 
-    private static func configureModels() throws {
-        let dashscope = try securePrompt("语音识别服务密钥（DashScope）：")
-        let deepseek = try securePrompt("回答服务密钥（DeepSeek）：")
-        guard !dashscope.isEmpty, !deepseek.isEmpty else {
-            throw CLIError.usage("两个模型 Key 都不能为空")
-        }
-        try KeychainStore.save(dashscope, for: .dashscopeAPIKey)
-        try KeychainStore.save(deepseek, for: .deepseekAPIKey)
-        print("服务授权已安全保存到当前电脑。")
-    }
-
     private static func showStatus() throws {
         let configuration = try? AgentConfiguration.load()
         let token = try KeychainStore.load(.agentToken)
-        let dashscope = try KeychainStore.load(.dashscopeAPIKey)
-        let deepseek = try KeychainStore.load(.deepseekAPIKey)
         print("服务：\(configuration?.serverURL.absoluteString ?? "未配置")")
         print("用户：\(configuration?.username ?? "未登录")")
         print("登录状态：\(token == nil ? "未登录" : "已登录")")
-        print("语音识别：\(dashscope == nil ? "未准备" : "已准备")")
-        print("回答功能：\(deepseek == nil ? "未准备" : "已准备")")
         let permissions = CapturePermissions.current()
         print("面试声音：\(permissions.screenCaptureGranted ? "已允许" : "需要允许")")
         print("我的声音：\(permissions.microphoneGranted ? "已允许" : "需要允许")")
@@ -70,18 +55,30 @@ struct AntiBaguCaptureApp {
 
     private static func startAgent() async throws {
         let (configuration, token) = try await ensureAccount()
-        if try KeychainStore.load(.dashscopeAPIKey) == nil
-            || KeychainStore.load(.deepseekAPIKey) == nil
-        {
-            print("\n还需要完成一次服务授权。按照提示粘贴密钥即可，以后无需重复。")
-            try configureModels()
-        }
         let permissions = await CapturePermissions.request()
         if !permissions.screenCaptureGranted {
-            fputs("系统音频未授权：请在“屏幕与系统音频录制”中允许当前终端。\n", stderr)
+            let owner = CapturePermissions.permissionOwnerHint
+            fputs("""
+
+            尚未允许获取面试声音。
+            已打开“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”。
+            请在列表中找到“\(owner)”并打开开关，然后完全退出电脑助手并重新打开。
+            如果列表中没有它，请先关闭系统设置，再重新运行一次电脑助手。
+
+            """, stderr)
+            _ = await CapturePermissions.openScreenCaptureSettings()
         }
         if !permissions.microphoneGranted {
-            fputs("麦克风未授权：请在“麦克风”中允许当前终端。\n", stderr)
+            let owner = CapturePermissions.permissionOwnerHint
+            fputs("""
+
+            尚未允许获取你的声音。
+            请在“系统设置 → 隐私与安全性 → 麦克风”中找到“\(owner)”并打开开关，随后重新打开电脑助手。
+
+            """, stderr)
+            if permissions.screenCaptureGranted {
+                _ = await CapturePermissions.openMicrophoneSettings()
+            }
         }
         let client = AgentControlClient(
             configuration: configuration,
@@ -188,11 +185,6 @@ struct AntiBaguCaptureApp {
         return result
     }
 
-    private static func securePrompt(_ prompt: String) throws -> String {
-        guard let pointer = getpass(prompt) else { throw CLIError.inputUnavailable }
-        return String(cString: pointer)
-    }
-
     private static func waitForInterrupt() async {
         await withCheckedContinuation { continuation in
             signal(SIGINT, SIG_IGN)
@@ -212,21 +204,18 @@ struct AntiBaguCaptureApp {
           anti-bagu-agent              首次使用会自动引导，之后直接启动
           anti-bagu-agent status       查看当前准备状态
           anti-bagu-agent login        更换登录账号
-          anti-bagu-agent configure-models  更新服务授权
 
-        登录凭据和服务密钥只保存在 macOS 系统钥匙串中。
+        登录凭据保存在 macOS 系统钥匙串中；模型服务密钥请在网页“设置”中管理。
         """)
     }
 }
 
 enum CLIError: Error, CustomStringConvertible {
     case usage(String)
-    case inputUnavailable
 
     var description: String {
         switch self {
         case let .usage(message): message
-        case .inputUnavailable: "无法读取终端输入"
         }
     }
 }

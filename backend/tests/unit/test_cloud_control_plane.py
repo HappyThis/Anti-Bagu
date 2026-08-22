@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 from anti_bagu.api.app import create_app
 from anti_bagu.config import Settings
+from anti_bagu.persistence.models import UserModelCredentials
+from anti_bagu.tasks.model_verifier import VerificationResult
 
 
 def cloud_settings(tmp_path) -> Settings:
@@ -12,6 +14,7 @@ def cloud_settings(tmp_path) -> Settings:
         dashscope_api_key=None,
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
         storage_dir=tmp_path / "storage",
+        credential_key_path=tmp_path / "credential-encryption.key",
         audit_log_dir=tmp_path / "logs",
         admin_username="admin",
         admin_password="correct-horse-battery",
@@ -24,6 +27,21 @@ def bearer(token: str) -> dict[str, str]:
 
 async def resolve_agent_user(app, token: str):
     return await app.state.auth_service.resolve(token, kind="agent")
+
+
+async def encrypted_credentials_payload(app, user_id: str) -> str:
+    async with app.state.session_factory() as session:
+        record = await session.get(UserModelCredentials, user_id)
+        assert record is not None
+        return record.encrypted_payload
+
+
+class SuccessfulModelVerifier:
+    async def verify_asr(self, _: str) -> VerificationResult:
+        return VerificationResult(True, "语音识别连接正常", 120.0)
+
+    async def verify_llm(self, _: str) -> VerificationResult:
+        return VerificationResult(True, "回答服务连接正常", 180.0)
 
 
 def test_activation_registration_login_and_task_lifecycle(tmp_path) -> None:
@@ -243,3 +261,72 @@ def test_browser_authorization_can_be_cancelled(tmp_path) -> None:
         )
         assert polled.status_code == 200
         assert polled.json()["status"] == "cancelled"
+
+
+def test_model_credentials_are_configured_in_web_and_encrypted_at_rest(tmp_path) -> None:
+    app = create_app(cloud_settings(tmp_path))
+    with TestClient(app) as client:
+        app.state.model_verifier = SuccessfulModelVerifier()
+        admin = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-horse-battery"},
+        ).json()
+        key = client.post(
+            "/api/v1/admin/activation-keys",
+            headers=bearer(admin["token"]),
+            json={},
+        ).json()["display_key"]
+        registration = client.post(
+            "/api/v1/auth/register",
+            json={
+                "activation_key": key,
+                "username": "model.owner",
+                "password": "strong-password",
+            },
+        ).json()
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "model.owner", "password": "strong-password"},
+        ).json()
+
+        initial = client.get("/api/v1/model-status", headers=bearer(login["token"]))
+        assert initial.status_code == 200
+        assert initial.json()["asr"]["configured"] is False
+        assert initial.json()["llm"]["configured"] is False
+
+        saved = client.put(
+            "/api/v1/model-credentials",
+            headers=bearer(login["token"]),
+            json={
+                "dashscope_api_key": "dashscope-secret-value",
+                "deepseek_api_key": "deepseek-secret-value",
+            },
+        )
+        assert saved.status_code == 200
+        assert saved.json()["saved"] is True
+        assert "secret-value" not in saved.text
+
+        status = client.get("/api/v1/model-status", headers=bearer(login["token"]))
+        assert status.json()["asr"]["configured"] is True
+        assert status.json()["llm"]["configured"] is True
+        assert status.json()["storage"] == "服务器加密保存"
+
+        assert client.portal is not None
+        ciphertext = client.portal.call(
+            encrypted_credentials_payload, app, registration["id"]
+        )
+        assert "dashscope-secret-value" not in ciphertext
+        assert "deepseek-secret-value" not in ciphertext
+        assert (tmp_path / "credential-encryption.key").stat().st_mode & 0o777 == 0o600
+
+        updated = client.put(
+            "/api/v1/model-credentials",
+            headers=bearer(login["token"]),
+            json={"deepseek_api_key": "updated-deepseek-secret"},
+        )
+        assert updated.status_code == 200
+        stored = client.portal.call(
+            app.state.model_credential_service.get, registration["id"]
+        )
+        assert stored.dashscope_api_key == "dashscope-secret-value"
+        assert stored.deepseek_api_key == "updated-deepseek-secret"

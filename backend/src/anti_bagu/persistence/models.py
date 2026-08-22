@@ -74,6 +74,19 @@ class AuthSession(Base):
     user: Mapped[User] = relationship()
 
 
+class UserModelCredentials(Base):
+    __tablename__ = "user_model_credentials"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    encrypted_payload: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
 class Task(Base):
     __tablename__ = "tasks"
 

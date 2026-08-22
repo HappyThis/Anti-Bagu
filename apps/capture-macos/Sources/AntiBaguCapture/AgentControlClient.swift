@@ -28,7 +28,7 @@ actor AgentControlClient {
 
     func run() async throws {
         let endpoint = try controlEndpoint(configuration.serverURL)
-        try ensureSecureSecrets(endpoint)
+        try ensureSecureConnection(endpoint)
         var request = URLRequest(url: endpoint)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let task = session.webSocketTask(with: request)
@@ -72,8 +72,6 @@ actor AgentControlClient {
         let type = payload["type"] as? String
         switch type {
         case "preflight.request":
-            let dashscope = try KeychainStore.load(.dashscopeAPIKey) ?? ""
-            let deepseek = try KeychainStore.load(.deepseekAPIKey) ?? ""
             try await send([
                 "type": "preflight.result",
                 "request_id": payload["request_id"] as? String ?? "",
@@ -81,10 +79,6 @@ actor AgentControlClient {
                 "permissions": [
                     "screen_capture": permissions.screenCaptureGranted,
                     "microphone": permissions.microphoneGranted,
-                ],
-                "model_credentials": [
-                    "dashscope_api_key": dashscope,
-                    "deepseek_api_key": deepseek,
                 ],
             ])
         case "task.start", "task.resume":
@@ -131,7 +125,7 @@ actor AgentControlClient {
         return endpoint
     }
 
-    private func ensureSecureSecrets(_ endpoint: URL) throws {
+    private func ensureSecureConnection(_ endpoint: URL) throws {
         let localHosts = Set(["127.0.0.1", "localhost", "::1"])
         if endpoint.scheme != "wss", !localHosts.contains(endpoint.host ?? "") {
             throw AgentControlError.insecureRemoteConnection
@@ -148,7 +142,7 @@ enum AgentControlError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .invalidServerURL: "服务地址无效"
-        case .insecureRemoteConnection: "远程 Agent 必须使用 HTTPS/WSS，拒绝通过明文连接发送模型 Key"
+        case .insecureRemoteConnection: "远程连接必须使用 HTTPS/WSS"
         case .notConnected: "Agent 控制通道未连接"
         case .invalidMessage: "Agent 消息编码失败"
         }

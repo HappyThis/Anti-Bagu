@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
 from sqlalchemy import desc, select
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from anti_bagu.agent.hub import AgentHub, AgentUnavailable
 from anti_bagu.api.schemas import PreflightCheck
 from anti_bagu.config import Settings
+from anti_bagu.credentials.service import ModelCredentialService
 from anti_bagu.interview.events import RealtimeEvent
 from anti_bagu.mobile.hub import MobileHub
 from anti_bagu.persistence.models import PlatformAudit, Task, User
@@ -28,6 +30,7 @@ class TaskService:
         mobiles: MobileHub,
         runtimes: RuntimeRegistry,
         verifier: ModelVerifier,
+        credentials: ModelCredentialService,
     ) -> None:
         self._sessions = session_factory
         self._settings = settings
@@ -35,6 +38,7 @@ class TaskService:
         self._mobiles = mobiles
         self._runtimes = runtimes
         self._verifier = verifier
+        self._credentials = credentials
 
     async def list_for(self, user: User) -> list[Task]:
         async with self._sessions() as session:
@@ -144,48 +148,48 @@ class TaskService:
                 ),
             )
         )
-        credentials = result.get("model_credentials") or {}
-        dashscope_key = str(credentials.get("dashscope_api_key") or "")
-        deepseek_key = str(credentials.get("deepseek_api_key") or "")
+        credentials = await self._credentials.get(user.id)
+        dashscope_key = credentials.dashscope_api_key if credentials else ""
+        deepseek_key = credentials.deepseek_api_key if credentials else ""
 
-        if dashscope_key:
-            verified = await self._verifier.verify_asr(dashscope_key)
+        if dashscope_key and deepseek_key:
+            asr_verified, llm_verified = await asyncio.gather(
+                self._verifier.verify_asr(dashscope_key),
+                self._verifier.verify_llm(deepseek_key),
+            )
             checks.append(
                 PreflightCheck(
                     key="asr",
                     label="ASR 模型",
-                    ok=verified.ok,
-                    detail=verified.detail,
-                    latency_ms=verified.latency_ms,
+                    ok=asr_verified.ok,
+                    detail=asr_verified.detail,
+                    latency_ms=asr_verified.latency_ms,
                 )
             )
-        else:
-            checks.append(
-                PreflightCheck(
-                    key="asr",
-                    label="ASR 模型",
-                    ok=False,
-                    detail="Agent 未配置 DashScope Key",
-                )
-            )
-        if deepseek_key:
-            verified = await self._verifier.verify_llm(deepseek_key)
             checks.append(
                 PreflightCheck(
                     key="llm",
                     label="LLM 模型",
-                    ok=verified.ok,
-                    detail=verified.detail,
-                    latency_ms=verified.latency_ms,
+                    ok=llm_verified.ok,
+                    detail=llm_verified.detail,
+                    latency_ms=llm_verified.latency_ms,
                 )
             )
         else:
-            checks.append(
-                PreflightCheck(
-                    key="llm",
-                    label="LLM 模型",
-                    ok=False,
-                    detail="Agent 未配置 DeepSeek Key",
+            checks.extend(
+                (
+                    PreflightCheck(
+                        key="asr",
+                        label="ASR 模型",
+                        ok=False,
+                        detail="请先在网页设置中保存语音识别服务密钥",
+                    ),
+                    PreflightCheck(
+                        key="llm",
+                        label="LLM 模型",
+                        ok=False,
+                        detail="请先在网页设置中保存回答服务密钥",
+                    ),
                 )
             )
 

@@ -98,12 +98,6 @@ class AgentHub:
             connection.last_seen_at = time.time()
         if payload.get("type") != "preflight.result":
             return
-        if connection is not None:
-            credentials = payload.get("model_credentials") or {}
-            connection.device["models"] = {
-                "asr_configured": bool(credentials.get("dashscope_api_key")),
-                "llm_configured": bool(credentials.get("deepseek_api_key")),
-            }
         request_id = str(payload.get("request_id", ""))
         pending = self._pending.get(request_id)
         if pending is not None:
