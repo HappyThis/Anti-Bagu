@@ -1,40 +1,44 @@
 import {
   ArrowClockwise,
-  Brain,
-  Broadcast,
-  CellSignalFull,
-  CheckCircle,
+  Check,
+  Desktop,
+  DeviceMobile,
+  DownloadSimple,
+  Headphones,
   LockKey,
-  Microphone,
   PencilSimple,
   Play,
-  ShieldCheck,
-  SpeakerHigh,
-  Waveform,
-  WarningCircle,
 } from '@phosphor-icons/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import QRCode from 'react-qr-code'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { useProduct } from '../ProductContext'
-import { StatusRow } from '../components/StatusRow'
 import type { PreflightCheck } from '../types'
 
-const CHECK_ICONS = {
-  agent: Broadcast,
-  agent_response: Broadcast,
-  system_audio: SpeakerHigh,
-  microphone: Microphone,
-  asr: Waveform,
-  llm: Brain,
-  mobile: CellSignalFull,
-} as const
+const FAILURE_COPY: Record<string, string> = {
+  agent: '电脑助手还没有连接',
+  agent_response: '电脑助手暂时没有响应',
+  system_audio: '暂时听不到面试声音',
+  microphone: '暂时听不到你的声音',
+  asr: '问题识别功能还没有准备好',
+  llm: '回答功能还没有准备好',
+  mobile: '请先连接手机',
+}
 
 export function TaskWorkspacePage() {
   const { taskId } = useParams()
   const navigate = useNavigate()
-  const { getTask, loading, renameTask, updateTaskStatus, preflightTask, getPreflight, getPairing } = useProduct()
+  const {
+    getTask,
+    loading,
+    renameTask,
+    updateTaskStatus,
+    preflightTask,
+    getPreflight,
+    getPairing,
+  } = useProduct()
   const task = getTask(taskId)
   const [checking, setChecking] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -42,6 +46,7 @@ export function TaskWorkspacePage() {
   const [checks, setChecks] = useState<PreflightCheck[]>([])
   const [pairingUrl, setPairingUrl] = useState('')
   const [phoneConnected, setPhoneConnected] = useState(false)
+  const [showPhone, setShowPhone] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -68,21 +73,35 @@ export function TaskWorkspacePage() {
 
   useEffect(() => {
     if (!taskId) return
-    getPreflight(taskId).then((result) => setChecks(result.checks)).catch(() => setChecks([]))
+    getPreflight(taskId)
+      .then((result) => setChecks(result.checks))
+      .catch(() => setChecks([]))
   }, [getPreflight, taskId])
 
-  if (loading) return <div className="route-loading">正在加载任务…</div>
+  const checkMap = useMemo(
+    () => new Map(checks.map((check) => [check.key, check])),
+    [checks],
+  )
+
+  if (loading) return <div className="route-loading">正在加载面试…</div>
   if (!task) return <Navigate to="/tasks" replace />
   const activeTask = task
+  const ready = activeTask.status === 'ready'
+  const computerReady = checkMap.get('agent')?.ok === true
+  const soundKeys = ['system_audio', 'microphone', 'asr', 'llm']
+  const soundReady = soundKeys.every((key) => checkMap.get(key)?.ok === true)
+  const currentStep = ready ? 3 : computerReady ? 2 : 1
+  const firstProblem = checks.find((check) => !check.ok)
+  const progress = ready ? 3 : soundReady ? 2 : computerReady ? 1 : 0
 
-  async function recheck() {
+  async function confirmReadiness() {
     setChecking(true)
     setError('')
     try {
       const result = await preflightTask(activeTask.id)
       setChecks(result.checks)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : '系统检查失败')
+      setError(requestError instanceof Error ? requestError.message : '暂时无法完成确认，请稍后重试')
     } finally {
       setChecking(false)
     }
@@ -94,114 +113,96 @@ export function TaskWorkspacePage() {
     setRenaming(false)
   }
 
-  async function startTask() {
+  async function startInterview() {
     setError('')
     try {
       await updateTaskStatus(activeTask.id, 'running')
       navigate(`/tasks/${activeTask.id}/live`)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : '任务启动失败')
+      setError(requestError instanceof Error ? requestError.message : '暂时无法开始，请重新确认')
     }
   }
 
-  const ready = activeTask.status === 'ready'
-  const failed = activeTask.status === 'check_failed'
-
   return (
-    <div className="task-workspace-page">
-      <section className="task-readiness">
-        <span className="eyebrow">当前任务</span>
-        <div className="task-title-row">
+    <section className="interview-prep-page">
+      <header className="prep-header">
+        <span className="eyebrow">准备面试</span>
+        <div className="task-title-row task-title-row--centered">
           {renaming ? (
             <div className="rename-control">
-              <input
-                autoFocus
-                value={draftName}
-                onChange={(event) => setDraftName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') saveName()
-                  if (event.key === 'Escape') setRenaming(false)
-                }}
-              />
-              <button type="button" onClick={saveName}>保存</button>
+              <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => {
+                if (event.key === 'Enter') void saveName()
+                if (event.key === 'Escape') setRenaming(false)
+              }} />
+              <button type="button" onClick={() => void saveName()}>保存</button>
             </div>
           ) : (
-            <>
-              <h1>{activeTask.name}</h1>
-              <button
-                className="rename-button"
-                type="button"
-                onClick={() => {
-                  setDraftName(activeTask.name)
-                  setRenaming(true)
-                }}
-              >
-                <PencilSimple size={19} />编辑
-              </button>
-            </>
+            <><h1>准备{activeTask.name}</h1><button className="rename-button" type="button" onClick={() => { setDraftName(activeTask.name); setRenaming(true) }}><PencilSimple size={18} />修改名称</button></>
           )}
         </div>
-        <div className="task-meta">
-          <span>面试官模式</span>
-          <i />
-          <span>{activeTask.mode === 'practice' ? '模拟模式' : '云端模式'}</span>
-        </div>
+        <p>三步完成准备，轻松开启面试。</p>
+        <strong className="prep-progress">完成 <b>{progress}</b> / 3</strong>
+      </header>
 
-        <div className={`readiness-heading ${failed ? 'readiness-heading--failed' : !ready ? 'readiness-heading--pending' : ''}`}>
-          {failed ? <WarningCircle size={52} weight="fill" /> : <CheckCircle size={52} weight="fill" />}
-          <div>
-            <h2>{checking ? '正在执行系统检查' : ready ? '系统检查通过' : failed ? '系统检查未通过' : '开始前需要完成检查'}</h2>
-            <p>{checking ? '正在验证监听端、音频和模型连接…' : ready ? '所有系统均已就绪，可以开始面试' : failed ? '请根据下方结果修复后重新检查' : '将检查桌面 Agent、双路音频、模型和手机连接'}</p>
-          </div>
-        </div>
+      <div className="prep-steps" aria-label="面试准备步骤">
+        <PreparationStep number={1} title="打开电脑助手" description="下载并打开后会自动连接，无需了解复杂设置。" icon={<Desktop size={34} />} active={currentStep === 1} complete={computerReady}>
+          {!computerReady ? <a className="primary-action prep-download" href="/downloads/anti-bagu-agent-macos-arm64.tar.gz" download><DownloadSimple size={19} />下载电脑助手</a> : null}
+        </PreparationStep>
 
-        <div className="status-list">
-          {checks.length === 0 ? <div className="preflight-empty"><ShieldCheck size={24} weight="duotone" /><span><strong>尚未执行检查</strong><small>保持桌面 Agent 在线，然后点击“开始检查”。</small></span></div> : null}
-          {checks.map((check) => (
-            <StatusRow
-              icon={CHECK_ICONS[check.key as keyof typeof CHECK_ICONS] ?? Broadcast}
-              label={check.label}
-              detail={check.detail}
-              latency={check.latencyMs === null ? '—' : check.latencyMs >= 1000 ? `${(check.latencyMs / 1000).toFixed(2)} s` : `${Math.round(check.latencyMs)} ms`}
-              ok={check.ok}
-              checking={checking}
-              key={check.key}
-            />
-          ))}
-        </div>
+        <PreparationStep number={2} title="确认可以听清" description="确认面试声音、你的声音和回答功能都能正常使用。" icon={<Headphones size={34} />} active={currentStep === 2} complete={soundReady} locked={!computerReady}>
+          {computerReady && !ready ? <button className="primary-action prep-confirm" type="button" onClick={() => void confirmReadiness()} disabled={checking}>{checking ? <><ArrowClockwise className="spin" size={19} />正在确认…</> : '开始确认'}</button> : null}
+        </PreparationStep>
 
-        {error ? <div className="form-error preflight-error" role="alert">{error}</div> : null}
+        <PreparationStep number={3} title="开始面试" description="一切准备好后，由你亲自点击开始。" icon={<Play size={34} weight="fill" />} active={currentStep === 3} complete={false} locked={!ready}>
+          {ready ? <button className="primary-action prep-start" type="button" onClick={() => void startInterview()}><Play size={21} weight="fill" />开始面试</button> : null}
+        </PreparationStep>
+      </div>
 
-        <div className="readiness-actions">
-          <button className="secondary-action" type="button" onClick={recheck} disabled={checking}>
-            <ArrowClockwise className={checking ? 'spin' : ''} size={22} />
-            {checking ? '检查中…' : checks.length ? '重新检查' : '开始检查'}
-          </button>
-          <button className="primary-action" type="button" onClick={startTask} disabled={checking || !ready}>
-            <Play size={22} weight="fill" />开始面试
-          </button>
-        </div>
-        <p className="gated-note"><LockKey size={15} />所有检查项必须通过后才能开始面试</p>
-      </section>
+      {!computerReady ? <section className="helper-not-connected" aria-label="电脑助手未连接">
+        <div><strong>电脑助手未连接</strong><span>可能尚未安装，或者安装后没有打开。</span><small>如果 macOS 提示“无法验证”，请前往“系统设置 → 隐私与安全性”，点击“仍要打开”。</small></div>
+        <div className="helper-not-connected-actions"><a className="primary-action" href="/downloads/anti-bagu-agent-macos-arm64.tar.gz" download><DownloadSimple size={18} />尚未安装，立即下载</a><button className="secondary-action" type="button" onClick={() => void confirmReadiness()} disabled={checking}><ArrowClockwise className={checking ? 'spin' : ''} size={18} />{checking ? '正在连接…' : '已经安装，重新连接'}</button></div>
+      </section> : null}
 
-      <aside className="phone-companion">
-        <h2>{phoneConnected ? '手机端已配对' : activeTask.mobileRequired ? '等待手机端配对' : '手机端可选'}</h2>
-        <p>{phoneConnected ? '建议回答会实时推送到手机' : activeTask.mobileRequired ? '请使用手机扫描下方二维码' : '可扫码连接，也可以只使用电脑端'}</p>
-        <div className="qr-surface">
-          {pairingUrl ? <QRCode
-            bgColor="#ffffff"
-            fgColor="#101d33"
-            size={184}
-            value={pairingUrl}
-          /> : <span className="qr-loading">正在生成二维码…</span>}
-        </div>
-        <span className="qr-caption">扫描二维码查看手机端</span>
-        <div className="phone-connection">
-          <strong>手机连接状态</strong>
-          <span className={phoneConnected ? '' : 'phone-offline'}><i />{phoneConnected ? '已连接' : '等待连接'}</span>
-          <span className="phone-latency"><CellSignalFull size={21} weight="fill" />延迟 <em>35 ms</em></span>
-        </div>
-      </aside>
-    </div>
+      {firstProblem && firstProblem.key !== 'agent' ? <div className="prep-guidance" role="status"><span>{FAILURE_COPY[firstProblem.key] ?? '还有一项没有准备好'}</span><small>按当前步骤完成后，再点击确认。</small></div> : null}
+      {error ? <div className="form-error prep-error" role="alert">{error}</div> : null}
+
+      <div className="phone-setup-row">
+        <DeviceMobile size={28} />
+        <div><strong>想在手机上看回答？</strong><span>{phoneConnected ? '手机已经连接，面试开始后会同步显示回答。' : '连接后，可以在手机上实时查看回答内容。'}</span></div>
+        <button className="secondary-action compact-action" type="button" onClick={() => setShowPhone((current) => !current)}>{phoneConnected ? '查看二维码' : '连接手机'}</button>
+      </div>
+      {showPhone ? <div className="inline-phone-pairing"><div className="qr-surface">{pairingUrl ? <QRCode bgColor="#ffffff" fgColor="#101d33" size={184} value={pairingUrl} /> : <span className="qr-loading">正在生成二维码…</span>}</div><div><strong>用手机扫码</strong><span>打开后保持页面在线即可。</span><em className={phoneConnected ? 'paired-state' : ''}>{phoneConnected ? '已连接' : '等待连接'}</em></div></div> : null}
+      <p className="gated-note"><LockKey size={15} />只有你点击“开始面试”后，电脑助手才会开始工作</p>
+    </section>
+  )
+}
+
+function PreparationStep({
+  number,
+  title,
+  description,
+  icon,
+  active,
+  complete,
+  locked = false,
+  children,
+}: {
+  number: number
+  title: string
+  description: string
+  icon: ReactNode
+  active: boolean
+  complete: boolean
+  locked?: boolean
+  children?: ReactNode
+}) {
+  return (
+    <article className={`prep-step ${active ? 'prep-step--active' : ''} ${complete ? 'prep-step--complete' : ''} ${locked ? 'prep-step--locked' : ''}`}>
+      <div className="prep-step-icon">{complete ? <Check size={34} weight="bold" /> : icon}</div>
+      <span className="prep-step-number">{number}</span>
+      <h2>{title}</h2>
+      <p>{description}</p>
+      <div className="prep-step-action">{children}</div>
+    </article>
   )
 }

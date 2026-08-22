@@ -9,9 +9,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from anti_bagu.agent.authorization import AgentAuthorizationHub
 from anti_bagu.agent.hub import AgentHub
 from anti_bagu.api.event_hub import EventHub
-from anti_bagu.api.routers import admin, auth, realtime, tasks, user
+from anti_bagu.api.routers import admin, agent_authorization, auth, realtime, tasks, user
 from anti_bagu.asr.qwen_streaming import QwenStreamingASRSession
 from anti_bagu.audio.protocol import AudioFramePacket, AudioMetadata, pcm_level
 from anti_bagu.auth.service import AuthService
@@ -54,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         agent_token_days=active_settings.agent_token_days,
     )
     agent_hub = AgentHub()
+    agent_authorizations = AgentAuthorizationHub()
     mobile_hub = MobileHub()
     runtime_registry = RuntimeRegistry(
         active_settings, session_factory, audit
@@ -133,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(active_settings.cors_origins),
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -144,11 +147,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = session_factory
     app.state.auth_service = auth_service
     app.state.agent_hub = agent_hub
+    app.state.agent_authorizations = agent_authorizations
     app.state.mobile_hub = mobile_hub
     app.state.runtime_registry = runtime_registry
     app.state.task_service = task_service
 
     app.include_router(auth.router)
+    app.include_router(agent_authorization.router)
     app.include_router(tasks.router)
     app.include_router(user.router)
     app.include_router(admin.router)

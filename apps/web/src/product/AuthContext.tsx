@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import {
   apiRequest,
@@ -17,6 +17,7 @@ interface LoginResponse {
 interface AuthContextValue {
   session: StoredSession | null
   user: AuthUser | null
+  loading: boolean
   login: (username: string, password: string) => Promise<AuthUser>
   register: (activationKey: string, username: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -26,6 +27,28 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<StoredSession | null>(() => loadSession())
+  const [loading, setLoading] = useState(session === null)
+
+  useEffect(() => {
+    if (session) {
+      setLoading(false)
+      return
+    }
+    let disposed = false
+    apiRequest<AuthUser>('/auth/me', { credentials: 'same-origin' }, undefined)
+      .then((user) => {
+        if (!disposed) {
+          setSession({ token: '', expiresAt: '', user })
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!disposed) setLoading(false)
+      })
+    return () => {
+      disposed = true
+    }
+  }, [session])
 
   const login = useCallback(async (username: string, password: string) => {
     const response = await apiRequest<LoginResponse>('/auth/login', {
@@ -65,10 +88,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(() => ({
     session,
     user: session?.user ?? null,
+    loading,
     login,
     register,
     logout,
-  }), [login, logout, register, session])
+  }), [loading, login, logout, register, session])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

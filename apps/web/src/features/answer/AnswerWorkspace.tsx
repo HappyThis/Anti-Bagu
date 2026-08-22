@@ -25,13 +25,13 @@ export function AnswerWorkspace({
         <header>
           <div>
             <span className="section-label section-label--answer">建议回答</span>
-            {mode ? <span className="mode-text">{mode}</span> : null}
+            {mode ? <span className="mode-text">回答已准备</span> : null}
           </div>
           <button type="button" onClick={onClear}>清空</button>
         </header>
         {error ? <p className="error-copy">{error}</p> : null}
         <p className={answer ? 'answer-copy' : 'answer-copy answer-copy--empty'}>
-          {answer || '识别到完整问题后，回答会显示在这里。'}
+          {answer || '听到完整问题后，建议回答会显示在这里。'}
           {generating ? <span className="cursor" aria-hidden="true" /> : null}
         </p>
       </section>

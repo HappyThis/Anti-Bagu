@@ -49,7 +49,7 @@ actor AgentControlClient {
                 try? await self?.send(["type": "agent.heartbeat", "at": Date().timeIntervalSince1970])
             }
         }
-        print("桌面 Agent 已连接：\(configuration.serverURL.absoluteString)")
+        print("电脑助手已连接。")
         do {
             while let message = try await receive() {
                 try await handle(message)

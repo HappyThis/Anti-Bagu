@@ -14,12 +14,12 @@ import { CreateTaskPage } from '../product/pages/CreateTaskPage'
 import { DevicesPage } from '../product/pages/DevicesPage'
 import { LiveTaskPage } from '../product/pages/LiveTaskPage'
 import { LoginPage } from '../product/pages/LoginPage'
-import { ModelsPage } from '../product/pages/ModelsPage'
 import { MobileCompanionPage } from '../product/pages/MobileCompanionPage'
 import { RegisterPage } from '../product/pages/RegisterPage'
 import { ReviewDetailPage } from '../product/pages/ReviewDetailPage'
 import { ReviewsPage } from '../product/pages/ReviewsPage'
 import { TaskWorkspacePage } from '../product/pages/TaskWorkspacePage'
+import { AgentAuthorizePage } from '../product/pages/AgentAuthorizePage'
 
 export function App() {
   return (
@@ -29,6 +29,7 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/m/pair/:pairingToken" element={<MobileCompanionPage />} />
+          <Route path="/agent/authorize" element={<AgentAuthorizePage />} />
 
           <Route element={<RequireUser><ProductProvider><UserShell /></ProductProvider></RequireUser>}>
             <Route path="/tasks" element={<TaskIndexRedirect />} />
@@ -38,7 +39,7 @@ export function App() {
             <Route path="/reviews" element={<ReviewsPage />} />
             <Route path="/reviews/:reviewId" element={<ReviewDetailPage />} />
             <Route path="/devices" element={<DevicesPage />} />
-            <Route path="/models" element={<ModelsPage />} />
+            <Route path="/models" element={<Navigate to="/devices" replace />} />
           </Route>
 
           <Route path="/admin" element={<RequireAdmin><AdminShell /></RequireAdmin>}>
@@ -58,22 +59,25 @@ export function App() {
 }
 
 function RequireUser({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
   const location = useLocation()
+  if (loading) return <div className="route-loading">正在确认登录状态…</div>
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />
   if (user.role === 'admin') return <Navigate to="/admin" replace />
   return children
 }
 
 function RequireAdmin({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
+  if (loading) return <div className="route-loading">正在确认登录状态…</div>
   if (!user) return <Navigate to="/login" replace />
   if (user.role !== 'admin') return <Navigate to="/tasks" replace />
   return children
 }
 
 function HomeRedirect() {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
+  if (loading) return <div className="route-loading">正在确认登录状态…</div>
   if (!user) return <Navigate to="/login" replace />
   return <Navigate to={user.role === 'admin' ? '/admin' : '/tasks'} replace />
 }

@@ -86,7 +86,7 @@ export function ProductProvider({ children }: { children: ReactNode }) {
       setTasks(rows.map(mapTask))
       setError('')
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : '任务加载失败')
+      setError(requestError instanceof Error ? requestError.message : '面试记录加载失败')
     } finally {
       setLoading(false)
     }

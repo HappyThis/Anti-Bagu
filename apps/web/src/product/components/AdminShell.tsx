@@ -21,7 +21,7 @@ export function AdminShell() {
           <strong>Anti-Bagu</strong>
           <span>管理端</span>
         </div>
-        <div className="admin-environment"><CirclesFour size={16} weight="fill" />生产环境 · 华北</div>
+        <div className="admin-environment"><CirclesFour size={16} weight="fill" />正式环境</div>
         <button className="account-button" type="button" onClick={() => void logout()} title="退出登录">
           <span className="avatar avatar--admin">A</span>
           <span>{user?.username}</span>
@@ -30,16 +30,16 @@ export function AdminShell() {
       </header>
       <div className="admin-body">
         <aside className="admin-sidebar">
-          <span className="nav-section-label">平台管理</span>
+          <span className="nav-section-label">运营管理</span>
           <nav aria-label="管理功能">
             <NavLink to="/admin" end><SquaresFour size={20} />概览</NavLink>
-            <NavLink to="/admin/activation-keys"><Key size={20} />激活密钥</NavLink>
+            <NavLink to="/admin/activation-keys"><Key size={20} />注册邀请码</NavLink>
             <NavLink to="/admin/users"><Users size={20} />用户</NavLink>
-            <NavLink to="/admin/tasks"><ListMagnifyingGlass size={20} />任务</NavLink>
-            <NavLink to="/admin/system"><Heartbeat size={20} />系统状态</NavLink>
+            <NavLink to="/admin/tasks"><ListMagnifyingGlass size={20} />面试</NavLink>
+            <NavLink to="/admin/system"><Heartbeat size={20} />服务状态</NavLink>
           </nav>
           <div className="admin-sidebar-footer">
-            <span>Anti-Bagu Cloud</span>
+            <span>Anti-Bagu 运营后台</span>
             <small>v0.4.0 · 内测</small>
             <a className="admin-exit" href="/tasks">
               <SignOut size={20} />退出管理端

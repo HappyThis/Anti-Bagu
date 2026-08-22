@@ -10,15 +10,15 @@ function value(milliseconds: number | null): string {
 
 export function DiagnosticsBar({ latency }: DiagnosticsBarProps) {
   const items = [
-    ['系统音频', latency.systemAudio],
-    ['麦克风', latency.microphone],
-    ['ASR', latency.asr],
-    ['模型', latency.model],
+    ['面试声音', latency.systemAudio],
+    ['我的声音', latency.microphone],
+    ['问题识别', latency.asr],
+    ['回答生成', latency.model],
   ] as const
 
   return (
     <footer className="diagnostics-bar">
-      <span className="diagnostics-title">延迟诊断</span>
+      <span className="diagnostics-title">响应情况</span>
       {items.map(([label, milliseconds]) => (
         <div className="diagnostic-item" key={label}>
           <span>{label}</span>
@@ -26,7 +26,7 @@ export function DiagnosticsBar({ latency }: DiagnosticsBarProps) {
         </div>
       ))}
       <div className="diagnostic-total">
-        <span>端到端延迟</span>
+        <span>整体响应</span>
         <strong>{value(latency.endToEnd)}</strong>
       </div>
     </footer>

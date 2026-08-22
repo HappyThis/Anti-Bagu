@@ -35,6 +35,10 @@ class LoginResponse(BaseModel):
     user: UserView
 
 
+class AgentAuthorizationPollRequest(BaseModel):
+    device_secret: str = Field(min_length=32, max_length=256)
+
+
 class CreateTaskRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     mode: Literal["interview", "practice"] = "interview"

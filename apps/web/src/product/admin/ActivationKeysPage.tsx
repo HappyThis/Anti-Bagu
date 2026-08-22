@@ -57,22 +57,22 @@ export function ActivationKeysPage() {
   return (
     <section className="admin-page">
       <div className="page-title-actions">
-        <div><span className="eyebrow">账户准入</span><h1>激活密钥</h1><p className="page-lead">密钥仅展示一次，注册消费后立即作废。</p></div>
-        <button className="primary-action" type="button" onClick={() => void createKey()}><Plus size={19} />生成密钥</button>
+        <div><span className="eyebrow">用户邀请</span><h1>注册邀请码</h1><p className="page-lead">每个邀请码只能注册一个账号，使用后自动失效。</p></div>
+        <button className="primary-action" type="button" onClick={() => void createKey()}><Plus size={19} />生成邀请码</button>
       </div>
 
       {createdKey ? (
         <div className="created-key-banner">
           <Key size={25} />
-          <div><strong>新密钥已生成</strong><code>{createdKey}</code><span>关闭后将无法再次查看完整内容。</span></div>
+          <div><strong>新邀请码已生成</strong><code>{createdKey}</code><span>请立即复制并发送给受邀用户，关闭后不再完整显示。</span></div>
           <button type="button" onClick={() => navigator.clipboard.writeText(createdKey)}><Copy size={19} />复制</button>
           <button className="icon-button" type="button" onClick={() => setCreatedKey(null)} aria-label="关闭"><X size={19} /></button>
         </div>
       ) : null}
 
-      <div className="table-toolbar"><div><strong>{keys.length} 个密钥</strong><span>其中 {keys.filter((key) => key.status === 'unused').length} 个可用</span></div><div className="toolbar-actions"><label className="search-field"><MagnifyingGlass size={18} /><input placeholder="搜索密钥或绑定用户" value={query} onChange={(event) => setQuery(event.target.value)} /></label><button className="secondary-action compact-action" type="button"><FunnelSimple size={18} />筛选</button></div></div>
+      <div className="table-toolbar"><div><strong>{keys.length} 个邀请码</strong><span>其中 {keys.filter((key) => key.status === 'unused').length} 个可用</span></div><div className="toolbar-actions"><label className="search-field"><MagnifyingGlass size={18} /><input placeholder="搜索邀请码或用户名" value={query} onChange={(event) => setQuery(event.target.value)} /></label><button className="secondary-action compact-action" type="button"><FunnelSimple size={18} />筛选</button></div></div>
       <div className="data-table">
-        <div className="table-head"><span>密钥</span><span>状态</span><span>创建时间</span><span>过期时间</span><span>绑定用户</span><span>操作</span></div>
+        <div className="table-head"><span>邀请码</span><span>状态</span><span>创建时间</span><span>有效期至</span><span>注册用户</span><span>操作</span></div>
         {visibleKeys.map((key) => {
           const label = STATUS_LABEL[key.status]
           return (
@@ -84,7 +84,7 @@ export function ActivationKeysPage() {
             </div>
           )
         })}
-        {visibleKeys.length === 0 ? <div className="table-empty-state"><MagnifyingGlass size={24} /><strong>没有匹配的密钥</strong><span>可以生成新的注册密钥</span></div> : null}
+        {visibleKeys.length === 0 ? <div className="table-empty-state"><MagnifyingGlass size={24} /><strong>没有匹配的邀请码</strong><span>可以生成一个新的邀请码</span></div> : null}
       </div>
       <div className="table-pagination"><span>显示 {visibleKeys.length} / {keys.length} 条</span><div><button type="button" disabled>上一页</button><b>1</b><button type="button" disabled>下一页</button></div></div>
     </section>

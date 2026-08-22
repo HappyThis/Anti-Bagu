@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import time
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from anti_bagu.api.dependencies import Principal, current_principal, get_auth_service
 from anti_bagu.api.schemas import LoginRequest, LoginResponse, RegisterRequest, UserView
@@ -22,11 +24,26 @@ async def register(payload: RegisterRequest, auth: AuthService = Depends(get_aut
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(payload: LoginRequest, auth: AuthService = Depends(get_auth_service)):
+async def login(
+    payload: LoginRequest,
+    request: Request,
+    response: Response,
+    auth: AuthService = Depends(get_auth_service),
+):
     try:
         issued = await auth.login(payload.username, payload.password, kind="web")
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    max_age = max(1, int(issued.expires_at.timestamp() - time.time()))
+    response.set_cookie(
+        "anti_bagu_session",
+        issued.token,
+        max_age=max_age,
+        httponly=True,
+        secure=request.app.state.settings.public_base_url.startswith("https://"),
+        samesite="lax",
+        path="/",
+    )
     return LoginResponse(
         token=issued.token,
         expires_at=issued.expires_at,
@@ -56,7 +73,9 @@ async def me(principal: Principal = Depends(current_principal)):
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    response: Response,
     principal: Principal = Depends(current_principal),
     auth: AuthService = Depends(get_auth_service),
 ) -> None:
     await auth.revoke(principal.token)
+    response.delete_cookie("anti_bagu_session", path="/")

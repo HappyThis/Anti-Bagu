@@ -145,27 +145,14 @@ class AuthService:
                 or not verify_password(password, user.password_hash)
             ):
                 raise AuthError("用户名或密码错误")
-            days = self._agent_token_days if kind == "agent" else self._web_session_days
-            prefix = "aba" if kind == "agent" else "abw"
-            token = new_opaque_token(prefix)
-            expires_at = datetime.now(UTC) + timedelta(days=days)
-            session.add(
-                AuthSession(
-                    user_id=user.id,
-                    kind=kind,
-                    token_hash=hash_token(token),
-                    expires_at=expires_at,
-                )
-            )
-            session.add(
-                PlatformAudit(
-                    actor_user_id=user.id,
-                    action=f"auth.{kind}.issued",
-                    target_type="session",
-                )
-            )
-            await session.commit()
-            return IssuedSession(token=token, expires_at=expires_at, user=user)
+            return await self._issue(session, user, kind=kind)
+
+    async def issue_for_user(self, user: User, *, kind: str) -> IssuedSession:
+        async with self._sessions() as session:
+            current = await session.get(User, user.id)
+            if current is None or current.status != "active":
+                raise AuthError("用户不可用")
+            return await self._issue(session, current, kind=kind)
 
     async def resolve(self, token: str, *, kind: str | None = None) -> User | None:
         now = datetime.now(UTC)
@@ -195,6 +182,31 @@ class AuthService:
             if record is not None:
                 record.revoked_at = datetime.now(UTC)
                 await session.commit()
+
+    async def _issue(
+        self, session: AsyncSession, user: User, *, kind: str
+    ) -> IssuedSession:
+        days = self._agent_token_days if kind == "agent" else self._web_session_days
+        prefix = "aba" if kind == "agent" else "abw"
+        token = new_opaque_token(prefix)
+        expires_at = datetime.now(UTC) + timedelta(days=days)
+        session.add(
+            AuthSession(
+                user_id=user.id,
+                kind=kind,
+                token_hash=hash_token(token),
+                expires_at=expires_at,
+            )
+        )
+        session.add(
+            PlatformAudit(
+                actor_user_id=user.id,
+                action=f"auth.{kind}.issued",
+                target_type="session",
+            )
+        )
+        await session.commit()
+        return IssuedSession(token=token, expires_at=expires_at, user=user)
 
 
 def _as_utc(value: datetime) -> datetime:

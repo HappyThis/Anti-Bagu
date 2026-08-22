@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 
@@ -5,7 +6,7 @@ import Foundation
 struct AntiBaguCaptureApp {
     static func main() async {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        let command = arguments.first ?? "help"
+        let command = arguments.first ?? "start"
         do {
             switch command {
             case "login":
@@ -30,37 +31,26 @@ struct AntiBaguCaptureApp {
 
     private static func login(arguments: [String]) async throws {
         let options = parseOptions(arguments)
-        guard let server = options["server"],
-              let serverURL = URL(string: server),
-              let username = options["username"],
-              !username.isEmpty
-        else {
-            throw CLIError.usage("login 需要 --server 和 --username")
+        let server = options["server"] ?? "https://101.42.92.125"
+        guard let serverURL = URL(string: server) else {
+            throw CLIError.usage("服务地址无效")
         }
         let localHosts = Set(["127.0.0.1", "localhost", "::1"])
         if serverURL.scheme != "https", !localHosts.contains(serverURL.host ?? "") {
-            throw CLIError.usage("远程登录必须使用 HTTPS，拒绝通过明文连接发送密码")
+            throw CLIError.usage("远程登录必须使用 HTTPS")
         }
-        let password = try securePrompt("账户密码：")
-        let response = try await AgentAPI.login(
-            serverURL: serverURL,
-            username: username,
-            password: password
-        )
-        try AgentConfiguration(serverURL: serverURL, username: username).save()
-        try KeychainStore.save(response.token, for: .agentToken)
-        print("登录成功，Agent Token 已保存到系统钥匙串，有效期至 \(response.expiresAt)")
+        _ = try await browserLogin(serverURL: serverURL)
     }
 
     private static func configureModels() throws {
-        let dashscope = try securePrompt("DashScope API Key：")
-        let deepseek = try securePrompt("DeepSeek API Key：")
+        let dashscope = try securePrompt("语音识别服务密钥（DashScope）：")
+        let deepseek = try securePrompt("回答服务密钥（DeepSeek）：")
         guard !dashscope.isEmpty, !deepseek.isEmpty else {
             throw CLIError.usage("两个模型 Key 都不能为空")
         }
         try KeychainStore.save(dashscope, for: .dashscopeAPIKey)
         try KeychainStore.save(deepseek, for: .deepseekAPIKey)
-        print("模型 Key 已保存到当前 Mac 的系统钥匙串。")
+        print("服务授权已安全保存到当前电脑。")
     }
 
     private static func showStatus() throws {
@@ -70,18 +60,21 @@ struct AntiBaguCaptureApp {
         let deepseek = try KeychainStore.load(.deepseekAPIKey)
         print("服务：\(configuration?.serverURL.absoluteString ?? "未配置")")
         print("用户：\(configuration?.username ?? "未登录")")
-        print("Agent Token：\(token == nil ? "未配置" : "已配置")")
-        print("ASR 模型 Key：\(dashscope == nil ? "未配置" : "已配置")")
-        print("LLM 模型 Key：\(deepseek == nil ? "未配置" : "已配置")")
+        print("登录状态：\(token == nil ? "未登录" : "已登录")")
+        print("语音识别：\(dashscope == nil ? "未准备" : "已准备")")
+        print("回答功能：\(deepseek == nil ? "未准备" : "已准备")")
         let permissions = CapturePermissions.current()
-        print("系统音频权限：\(permissions.screenCaptureGranted ? "已授权" : "未授权")")
-        print("麦克风权限：\(permissions.microphoneGranted ? "已授权" : "未授权")")
+        print("面试声音：\(permissions.screenCaptureGranted ? "已允许" : "需要允许")")
+        print("我的声音：\(permissions.microphoneGranted ? "已允许" : "需要允许")")
     }
 
     private static func startAgent() async throws {
-        let configuration = try AgentConfiguration.load()
-        guard let token = try KeychainStore.load(.agentToken) else {
-            throw CLIError.usage("尚未登录，请先执行 anti-bagu-agent login")
+        let (configuration, token) = try await ensureAccount()
+        if try KeychainStore.load(.dashscopeAPIKey) == nil
+            || KeychainStore.load(.deepseekAPIKey) == nil
+        {
+            print("\n还需要完成一次服务授权。按照提示粘贴密钥即可，以后无需重复。")
+            try configureModels()
         }
         let permissions = await CapturePermissions.request()
         if !permissions.screenCaptureGranted {
@@ -106,11 +99,78 @@ struct AntiBaguCaptureApp {
                 }
             }
         }
-        print("Anti-Bagu Agent 正在等待任务。按 Ctrl+C 停止。")
+        print("Anti-Bagu 电脑助手已经打开，正在等待面试。按 Ctrl+C 停止。")
         await waitForInterrupt()
         runner.cancel()
         await client.close()
         _ = await runner.result
+    }
+
+    private static func ensureAccount() async throws -> (AgentConfiguration, String) {
+        if let configuration = try? AgentConfiguration.load(),
+           let token = try KeychainStore.load(.agentToken)
+        {
+            return (configuration, token)
+        }
+
+        print("""
+
+        欢迎使用 Anti-Bagu 电脑助手
+        即将打开网页登录。首次允许后，以后打开会自动连接。
+
+        """)
+        let serverURL = URL(string: "https://101.42.92.125")!
+        return try await browserLogin(serverURL: serverURL)
+    }
+
+    private static func browserLogin(
+        serverURL: URL
+    ) async throws -> (AgentConfiguration, String) {
+        let authorization = try await AgentAPI.beginBrowserAuthorization(serverURL: serverURL)
+        guard let verificationURL = URL(string: authorization.verificationURL) else {
+            throw CLIError.usage("服务返回了无效的登录地址")
+        }
+        let opened = await MainActor.run {
+            NSWorkspace.shared.open(verificationURL)
+        }
+        guard opened else {
+            throw CLIError.usage("无法打开浏览器，请手动访问：\(verificationURL.absoluteString)")
+        }
+        print("已打开浏览器，请在网页中确认登录。")
+
+        let pollNanoseconds = UInt64(max(1, authorization.pollIntervalSeconds) * 1_000_000_000)
+        while Date().timeIntervalSince1970 < authorization.expiresAt {
+            try await Task.sleep(nanoseconds: pollNanoseconds)
+            let result = try await AgentAPI.pollBrowserAuthorization(
+                serverURL: serverURL,
+                requestID: authorization.requestID,
+                deviceSecret: authorization.deviceSecret
+            )
+            switch result.status {
+            case "approved":
+                guard let token = result.token,
+                      let username = result.username,
+                      !token.isEmpty,
+                      !username.isEmpty
+                else {
+                    throw CLIError.usage("登录结果不完整，请重新登录")
+                }
+                let configuration = AgentConfiguration(serverURL: serverURL, username: username)
+                try configuration.save()
+                try KeychainStore.save(token, for: .agentToken)
+                print("登录成功，账号：\(username)。")
+                return (configuration, token)
+            case "expired":
+                throw CLIError.usage("网页登录已超时，请重新运行电脑助手")
+            case "cancelled":
+                throw CLIError.usage("你已在网页中取消登录")
+            case "consumed":
+                throw CLIError.usage("这次登录已被使用，请重新运行电脑助手")
+            default:
+                continue
+            }
+        }
+        throw CLIError.usage("网页登录已超时，请重新运行电脑助手")
     }
 
     private static func parseOptions(_ arguments: [String]) -> [String: String] {
@@ -149,12 +209,12 @@ struct AntiBaguCaptureApp {
         print("""
         Anti-Bagu 桌面 Agent
 
-          anti-bagu-agent login --server https://example.com --username your-name
-          anti-bagu-agent configure-models
-          anti-bagu-agent status
-          anti-bagu-agent start
+          anti-bagu-agent              首次使用会自动引导，之后直接启动
+          anti-bagu-agent status       查看当前准备状态
+          anti-bagu-agent login        更换登录账号
+          anti-bagu-agent configure-models  更新服务授权
 
-        模型 Key 和 Agent Token 只保存在 macOS 系统钥匙串中。
+        登录凭据和服务密钥只保存在 macOS 系统钥匙串中。
         """)
     }
 }

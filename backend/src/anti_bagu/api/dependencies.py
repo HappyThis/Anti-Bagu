@@ -24,10 +24,11 @@ def get_auth_service(request: Request) -> AuthService:
 
 
 async def current_principal(
+    request: Request,
     authorization: str | None = Header(default=None),
     auth: AuthService = Depends(get_auth_service),
 ) -> Principal:
-    token = _bearer_token(authorization)
+    token = _bearer_token(authorization) or request.cookies.get("anti_bagu_session")
     user = await auth.resolve(token, kind="web") if token else None
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录或登录已过期")

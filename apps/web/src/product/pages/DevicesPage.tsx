@@ -1,4 +1,11 @@
-import { ArrowClockwise, CheckCircle, Copy, Desktop, DownloadSimple, Keyboard, Microphone, ShieldCheck, SpeakerHigh } from '@phosphor-icons/react'
+import {
+  ArrowClockwise,
+  Check,
+  Desktop,
+  DownloadSimple,
+  Headphones,
+  ShieldCheck,
+} from '@phosphor-icons/react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { apiRequest } from '../../shared/api'
@@ -7,94 +14,81 @@ import { useAuth } from '../AuthContext'
 interface DeviceRecord {
   id: string
   name: string
-  platform: string
-  agent_version: string
   status: 'online' | 'offline'
   last_seen_at: string
-  metadata: Record<string, unknown>
+}
+
+interface ServiceStatus {
+  agent_connected: boolean
+  asr: { configured: boolean }
+  llm: { configured: boolean }
 }
 
 export function DevicesPage() {
   const { session } = useAuth()
   const [testing, setTesting] = useState(false)
   const [devices, setDevices] = useState<DeviceRecord[]>([])
+  const [services, setServices] = useState<ServiceStatus | null>(null)
 
-  const loadDevices = useCallback(async () => {
+  const refresh = useCallback(async () => {
     if (!session) return
-    const rows = await apiRequest<DeviceRecord[]>('/devices', {}, session.token)
-    setDevices(rows)
-  }, [session])
-
-  useEffect(() => {
-    void loadDevices()
-  }, [loadDevices])
-
-  async function testDevices() {
     setTesting(true)
     try {
-      await loadDevices()
+      const [deviceRows, serviceStatus] = await Promise.all([
+        apiRequest<DeviceRecord[]>('/devices', {}, session.token),
+        apiRequest<ServiceStatus>('/model-status', {}, session.token),
+      ])
+      setDevices(deviceRows)
+      setServices(serviceStatus)
     } finally {
       setTesting(false)
     }
-  }
+  }, [session])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
 
   const device = devices[0]
   const online = device?.status === 'online'
+  const answersReady = Boolean(services?.asr.configured && services?.llm.configured)
 
   return (
-    <section className="content-page">
-      <span className="eyebrow">监听设备</span>
-      <h1>桌面 Agent 与音频设备</h1>
-      <p className="page-lead">任务开始前会再次执行完整检查，这里用于管理默认设备和权限。</p>
+    <section className="content-page simple-settings-page">
+      <span className="eyebrow">设置</span>
+      <h1>电脑助手</h1>
+      <p className="page-lead">面试开始后，电脑助手负责听取声音并把建议回答发送到页面。</p>
 
-      <div className="device-overview-grid">
-        <section className="device-hero">
-          <span className="device-icon"><Desktop size={30} weight="duotone" /></span>
-          <div><strong>{device?.name ?? '尚未连接桌面 Agent'}</strong><span>{device ? `${device.platform} · Agent ${device.agent_version}` : '请先在电脑终端登录并启动 CLI'}</span></div>
-          <span className={`connected-pill ${online ? '' : 'connected-pill--offline'}`}><i />{online ? '在线' : '离线'}</span>
-          <button className="secondary-action" type="button" onClick={testDevices} disabled={testing}>
-            <ArrowClockwise className={testing ? 'spin' : ''} size={19} />{testing ? '检测中' : '重新检测'}
-          </button>
-          <div className="device-facts">
-            <span><small>最后心跳</small><strong>{device ? new Date(device.last_seen_at).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}</strong></span>
-            <span><small>云端延迟</small><strong>{online ? '连接正常' : '—'}</strong></span>
-            <span><small>当前任务</small><strong>未占用</strong></span>
-          </div>
+      <section className={`helper-status-hero ${online ? 'helper-status-hero--online' : ''}`}>
+        <span className="helper-hero-icon"><Desktop size={34} weight="duotone" /></span>
+        <div>
+          <span>{online ? '已经连接' : '首次使用'}</span>
+          <h2>{online ? `${device?.name ?? '这台电脑'}已准备好` : '先下载并打开电脑助手'}</h2>
+          <p>{online ? '面试开始前，页面还会带你确认一次声音。' : '下载后按照提示登录账号，打开时会自动连接。'}</p>
+        </div>
+        {online ? <button className="secondary-action" type="button" onClick={() => void refresh()} disabled={testing}><ArrowClockwise className={testing ? 'spin' : ''} size={18} />重新确认</button> : <a className="primary-action" href="/downloads/anti-bagu-agent-macos-arm64.tar.gz" download><DownloadSimple size={19} />下载电脑助手</a>}
+      </section>
+
+      <div className="simple-setup-layout">
+        <section className="simple-setup-steps">
+          <h2>第一次使用</h2>
+          <ol>
+            <li><b>1</b><span><strong>下载并解压</strong><small>双击下载的文件，电脑会自动解压。</small></span></li>
+            <li><b>2</b><span><strong>双击“开始使用.command”</strong><small>如果被 macOS 拦截，按住 Control 点击文件并选择“打开”。</small></span></li>
+            <li><b>3</b><span><strong>跟随提示完成设置</strong><small>登录账号并完成一次服务授权，以后无需重复。</small></span></li>
+          </ol>
+          <p className="settings-help-note">如果 macOS 提示“无法验证”，请打开“系统设置 → 隐私与安全性”，点击“仍要打开”。完成后保持电脑助手窗口打开，再回到面试准备页继续。</p>
         </section>
 
-        <aside className="agent-command-card">
-          <span className="side-panel-label">桌面 CLI</span>
-          <h2>启动采集端</h2>
-          <p>首次使用先下载 macOS Agent；完成登录后，在终端运行：</p>
-          <a className="agent-download-link" href="/downloads/anti-bagu-agent-macos-arm64.tar.gz" download><DownloadSimple size={17} />下载 macOS Agent</a>
-          <code>anti-bagu-agent start</code>
-          <button type="button" onClick={() => navigator.clipboard.writeText('anti-bagu-agent start')}><Copy size={17} />复制命令</button>
-        </aside>
+        <section className="readiness-summary">
+          <h2>当前状态</h2>
+          <div><Desktop size={23} /><span><strong>电脑助手</strong><small>{online ? '已经打开' : '等待打开'}</small></span><em className={online ? 'is-ready' : ''}>{online ? <Check size={17} weight="bold" /> : '—'}</em></div>
+          <div><Headphones size={23} /><span><strong>面试声音</strong><small>{online ? '开始面试前会再次确认' : '连接后自动确认'}</small></span><em className={online ? 'is-ready' : ''}>{online ? <Check size={17} weight="bold" /> : '—'}</em></div>
+          <div><ShieldCheck size={23} /><span><strong>回答功能</strong><small>{answersReady ? '已经准备好' : '请在电脑助手中完成设置'}</small></span><em className={answersReady ? 'is-ready' : ''}>{answersReady ? <Check size={17} weight="bold" /> : '—'}</em></div>
+        </section>
       </div>
 
-      <div className="settings-section">
-        <h2>默认音频设备</h2>
-        <div className="settings-row">
-          <SpeakerHigh size={25} />
-          <div><strong>系统音频</strong><span>ScreenCaptureKit · 16kHz 单声道</span></div>
-          <CheckCircle className={online ? 'success-icon' : ''} size={21} weight="fill" />
-          <select aria-label="系统音频设备"><option>系统默认输出</option></select>
-        </div>
-        <div className="settings-row">
-          <Microphone size={25} />
-          <div><strong>麦克风</strong><span>MacBook Pro 麦克风 · 16kHz 单声道</span></div>
-          <CheckCircle className={online ? 'success-icon' : ''} size={21} weight="fill" />
-          <select aria-label="麦克风设备"><option>MacBook Pro 麦克风</option></select>
-        </div>
-      </div>
-
-      <div className="permissions-section">
-        <h2>系统权限</h2>
-        <p>桌面 Agent 仅在任务运行期间使用下列权限。</p>
-        <span><ShieldCheck size={21} weight="duotone" /><b>屏幕与系统音频录制</b><em><CheckCircle size={18} weight="fill" />{online ? '由任务预检确认' : '等待 Agent'}</em></span>
-        <span><Microphone size={21} weight="duotone" /><b>麦克风访问</b><em><CheckCircle size={18} weight="fill" />{online ? '由任务预检确认' : '等待 Agent'}</em></span>
-        <span><Keyboard size={21} weight="duotone" /><b>全局快捷键</b><em><CheckCircle size={18} weight="fill" />{online ? 'Agent 已接管' : '等待 Agent'}</em></span>
-      </div>
+      <p className="privacy-note"><ShieldCheck size={18} weight="fill" />只有你开始面试后才会听取声音，结束后立即停止。</p>
     </section>
   )
 }

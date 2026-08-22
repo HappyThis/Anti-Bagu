@@ -41,37 +41,33 @@ export function ReviewDetailPage() {
 
   const timeline = useMemo(() => events.filter((event) => DISPLAYED_EVENTS.has(event.event_type)), [events])
   const focuses = events.filter((event) => event.event_type === 'focus.updated')
-  const latencies = events
-    .filter((event) => event.event_type === 'latency.updated' && event.payload.endToEnd !== undefined)
-    .map((event) => Number(event.payload.endToEnd))
-  const averageLatency = latencies.length
-    ? Math.round(latencies.reduce((sum, latency) => sum + latency, 0) / latencies.length)
-    : 0
+  const answers = events.filter((event) => event.event_type === 'answer.completed')
+  const interrupted = events.filter((event) => event.event_type === 'answer.cancelled')
 
   return (
     <section className="content-page review-detail-page">
       <button className="back-link" type="button" onClick={() => navigate('/reviews')}>
-        <ArrowLeft size={18} />返回复盘
+        <ArrowLeft size={18} />返回面试记录
       </button>
       <div className="page-title-actions">
         <div>
-          <span className="eyebrow">任务复盘</span>
-          <h1>{task?.name ?? '面试任务'}</h1>
-          <p className="page-lead">{task?.createdAt ?? ''} · 完整事件时间线</p>
+          <span className="eyebrow">面试记录</span>
+          <h1>{task?.name ?? '面试'}</h1>
+          <p className="page-lead">{task?.createdAt ?? ''} · 按时间回顾问题和回答</p>
         </div>
-        <button className="secondary-action" type="button" onClick={() => downloadEvents(reviewId, events)}><DownloadSimple size={19} />导出 JSONL</button>
+        <button className="secondary-action" type="button" onClick={() => downloadEvents(reviewId, events)}><DownloadSimple size={19} />导出记录</button>
       </div>
 
       <div className="review-summary-strip">
-        <span><small>识别问题</small><strong>{focuses.length}</strong><em>全部已处理</em></span>
-        <span><small>平均端到端</small><strong>{averageLatency ? `${averageLatency} ms` : '—'}</strong><em>目标 &lt; 3 秒</em></span>
-        <span><small>异常事件</small><strong>{events.filter((event) => event.event_type === 'error').length}</strong><em>系统记录</em></span>
-        <span><small>数据完整性</small><strong>{events.length ? '完整' : '—'}</strong><em><CheckCircle size={13} weight="fill" />已持久化</em></span>
+        <span><small>面试问题</small><strong>{focuses.length}</strong><em>自动整理</em></span>
+        <span><small>建议回答</small><strong>{answers.length}</strong><em>已保存</em></span>
+        <span><small>回答切换</small><strong>{interrupted.length}</strong><em>遇到新问题</em></span>
+        <span><small>记录状态</small><strong>{events.length ? '完整' : '—'}</strong><em><CheckCircle size={13} weight="fill" />可以查看</em></span>
       </div>
 
       <div className="review-layout">
         <div className="timeline-panel">
-          <header><h2>完整时间线</h2><span>{timeline.length} 个关键事件</span></header>
+          <header><h2>面试过程</h2><span>{timeline.length} 条记录</span></header>
           {timeline.map((event) => {
             const view = eventView(event)
             return (
@@ -82,22 +78,22 @@ export function ReviewDetailPage() {
               </div>
             )
           })}
-          {!loading && timeline.length === 0 ? <div className="table-empty-state"><strong>暂无关键事件</strong><span>任务运行后，转写、Focus 和回答会显示在这里。</span></div> : null}
+          {!loading && timeline.length === 0 ? <div className="table-empty-state"><strong>暂无面试内容</strong><span>面试中的问题和回答会显示在这里。</span></div> : null}
         </div>
         <aside className="audio-review-panel">
-          <span className="side-panel-label">回放控制</span>
-          <h2>双路音频</h2>
-          <p>服务端按任务和通道保存原始音频，时间线事件与音频使用同一时间基准。</p>
-          <button className="audio-track" type="button"><Play size={18} weight="fill" /><span>面试官</span><b>系统音频</b></button>
-          <button className="audio-track audio-track--candidate" type="button"><Play size={18} weight="fill" /><span>候选人</span><b>麦克风</b></button>
+          <span className="side-panel-label">声音回放</span>
+          <h2>面试录音</h2>
+          <p>选择一方的声音进行回放。</p>
+          <button className="audio-track" type="button"><Play size={18} weight="fill" /><span>面试官声音</span><b>播放</b></button>
+          <button className="audio-track audio-track--candidate" type="button"><Play size={18} weight="fill" /><span>我的声音</span><b>播放</b></button>
           <hr />
-          <h3>本次模型配置</h3>
+          <h3>已经保存</h3>
           <dl>
-            <div><dt>ASR</dt><dd>Qwen Audio 3 ASR Flash</dd></div>
-            <div><dt>LLM</dt><dd>DeepSeek V4 Flash Vision</dd></div>
-            <div><dt>输入窗口</dt><dd>8K tokens</dd></div>
+            <div><dt>问题</dt><dd>面试官提出的问题</dd></div>
+            <div><dt>对话</dt><dd>面试官和你的发言</dd></div>
+            <div><dt>回答</dt><dd>当时显示的建议回答</dd></div>
           </dl>
-          <div className="review-integrity"><CheckCircle size={18} weight="fill" /><span><strong>记录已落盘</strong><small>事件、模型输入和运行日志均按任务保存</small></span></div>
+          <div className="review-integrity"><CheckCircle size={18} weight="fill" /><span><strong>记录已保存</strong><small>你可以随时返回查看</small></span></div>
         </aside>
       </div>
     </section>
@@ -108,21 +104,21 @@ function eventView(event: TaskEventRecord) {
   const payload = event.payload
   if (event.event_type === 'transcript.final') {
     return {
-      type: payload.channel === 'candidate' ? '候选人' : '面试官',
+      type: payload.channel === 'candidate' ? '我' : '面试官',
       title: String(payload.text ?? ''),
-      detail: 'ASR final',
+      detail: '语音已记录',
     }
   }
   if (event.event_type === 'focus.updated') {
-    return { type: 'Focus', title: String(payload.question ?? ''), detail: `generation ${payload.generation ?? '—'} · ${payload.mode ?? ''}` }
+    return { type: '面试问题', title: String(payload.question ?? ''), detail: '问题已整理' }
   }
   if (event.event_type === 'answer.completed') {
-    return { type: '建议回答', title: String(payload.answer ?? ''), detail: `${payload.mode ?? ''} · ${Math.round(Number(payload.duration_ms ?? 0))} ms` }
+    return { type: '建议回答', title: String(payload.answer ?? ''), detail: '回答已显示' }
   }
   if (event.event_type === 'answer.cancelled') {
-    return { type: '系统', title: '旧回答已被新问题抢占', detail: String(payload.reason ?? '') }
+    return { type: '回答更新', title: '已经切换到新的问题', detail: '旧回答已停止' }
   }
-  return { type: '系统', title: String(payload.message ?? '系统事件'), detail: event.event_type }
+  return { type: '使用提醒', title: String(payload.message ?? '出现了一条提醒'), detail: '请稍后查看' }
 }
 
 function downloadEvents(taskId: string, events: TaskEventRecord[]) {

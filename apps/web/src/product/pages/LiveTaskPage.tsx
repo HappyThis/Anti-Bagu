@@ -22,7 +22,7 @@ export function LiveTaskPage() {
   const { state, clear } = useRealtimeSession(realtimeUrl)
   const [paused, setPaused] = useState(false)
 
-  if (loading) return <div className="route-loading">正在加载任务…</div>
+  if (loading) return <div className="route-loading">正在加载面试…</div>
   if (!task) return <Navigate to="/tasks" replace />
   const activeTask = task
 
@@ -45,10 +45,10 @@ export function LiveTaskPage() {
     <div className="live-page">
       <header className="live-header">
         <div>
-          <span className="eyebrow">实时任务</span>
+          <span className="eyebrow">面试进行中</span>
           <h1>{activeTask.name}</h1>
           <span className={`live-connection live-connection--${state.connection}`}>
-            <i />{paused ? '已暂停采集' : state.connection === 'connected' ? '监听中' : '正在连接'}
+            <i />{paused ? '已暂停' : state.connection === 'connected' ? '正在听取面试' : '正在连接电脑助手'}
           </span>
         </div>
         <div className="live-actions">
@@ -65,16 +65,16 @@ export function LiveTaskPage() {
       <div className="live-transcript-grid">
         <TranscriptPanel
           channel="interviewer"
-          title="面试官"
-          source="系统音频"
+          title="面试官说的话"
+          source="面试声音"
           lines={state.interviewer}
           partial={state.partial.interviewer}
           connected={state.audioConnected.interviewer && !paused}
         />
         <TranscriptPanel
           channel="candidate"
-          title="候选人"
-          source="麦克风"
+          title="我说的话"
+          source="我的声音"
           lines={state.candidate}
           partial={state.partial.candidate}
           connected={state.audioConnected.candidate && !paused}

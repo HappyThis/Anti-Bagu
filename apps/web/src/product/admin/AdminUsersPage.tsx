@@ -39,10 +39,10 @@ export function AdminUsersPage() {
 
   return (
     <section className="admin-page">
-      <div className="page-title-actions admin-page-heading"><div><span className="eyebrow">账号管理</span><h1>用户</h1><p className="page-lead">用户使用激活密钥、用户名和密码注册；平台不收集邮箱或手机号。</p></div><button className="secondary-action compact-action" type="button"><DownloadSimple size={18} />导出列表</button></div>
+      <div className="page-title-actions admin-page-heading"><div><span className="eyebrow">账号管理</span><h1>用户</h1><p className="page-lead">用户使用邀请码、用户名和密码注册；平台不收集邮箱或手机号。</p></div><button className="secondary-action compact-action" type="button"><DownloadSimple size={18} />导出列表</button></div>
       <div className="table-toolbar"><div><strong>{users.length} 位用户</strong><span>{users.filter((user) => user.status === 'active').length} 位正常</span></div><div className="toolbar-actions"><label className="search-field"><MagnifyingGlass size={18} /><input placeholder="搜索用户名" value={query} onChange={(event) => setQuery(event.target.value)} /></label><button className="secondary-action compact-action" type="button"><FunnelSimple size={18} />状态</button></div></div>
       <div className="data-table users-table">
-        <div className="table-head"><span>用户</span><span>注册时间</span><span>任务</span><span>状态</span><span>操作</span></div>
+        <div className="table-head"><span>用户</span><span>注册时间</span><span>面试</span><span>状态</span><span>操作</span></div>
         {visibleUsers.map((user) => {
           const label = user.status === 'active' ? '正常' : '已停用'
           return (
