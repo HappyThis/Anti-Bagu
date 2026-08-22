@@ -38,9 +38,9 @@ package-agent: build-agent
 	mkdir -p apps/web/dist/downloads
 	mkdir -p apps/capture-macos/.build/agent-package
 	cp apps/capture-macos/.build/release/anti-bagu-agent apps/capture-macos/.build/agent-package/anti-bagu-agent
-	cp apps/capture-macos/Packaging/开始使用.command apps/capture-macos/Packaging/使用说明.txt apps/capture-macos/.build/agent-package/
-	chmod +x apps/capture-macos/.build/agent-package/anti-bagu-agent apps/capture-macos/.build/agent-package/开始使用.command
-	tar -czf apps/web/dist/downloads/anti-bagu-agent-macos-arm64.tar.gz -C apps/capture-macos/.build/agent-package anti-bagu-agent 开始使用.command 使用说明.txt
+	cp 'apps/capture-macos/Packaging/Start Anti-Bagu.command' apps/capture-macos/Packaging/README.txt apps/capture-macos/.build/agent-package/
+	chmod +x apps/capture-macos/.build/agent-package/anti-bagu-agent 'apps/capture-macos/.build/agent-package/Start Anti-Bagu.command'
+	tar -czf apps/web/dist/downloads/anti-bagu-agent-macos-arm64.tar.gz -C apps/capture-macos/.build/agent-package anti-bagu-agent 'Start Anti-Bagu.command' README.txt
 	shasum -a 256 apps/web/dist/downloads/anti-bagu-agent-macos-arm64.tar.gz > apps/web/dist/downloads/anti-bagu-agent-macos-arm64.tar.gz.sha256
 
 check: test build-web

@@ -118,7 +118,7 @@ export function DevicesPage() {
           <h2>第一次使用</h2>
           <ol>
             <li><b>1</b><span><strong>下载并解压</strong><small>双击下载的文件，电脑会自动解压。</small></span></li>
-            <li><b>2</b><span><strong>双击“开始使用.command”</strong><small>如果被 macOS 拦截，按住 Control 点击文件并选择“打开”。</small></span></li>
+            <li><b>2</b><span><strong>双击“Start Anti-Bagu.command”</strong><small>如果被 macOS 拦截，按住 Control 点击文件并选择“打开”。</small></span></li>
             <li><b>3</b><span><strong>允许声音权限</strong><small>电脑助手会打开对应的系统设置页，按提示打开权限后重新启动。</small></span></li>
           </ol>
           <p className="settings-help-note">系统音频没有权限时，请在“屏幕与系统音频录制”列表中打开“终端（Terminal）”或“anti-bagu-agent”，然后完全退出电脑助手并重新打开。</p>
