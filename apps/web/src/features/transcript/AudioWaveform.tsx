@@ -38,7 +38,7 @@ export function AudioWaveform({ channel, connected }: AudioWaveformProps) {
       }
       context.setTransform(ratio, 0, 0, ratio, 0, 0)
       context.clearRect(0, 0, width, height)
-      context.strokeStyle = channel === 'interviewer' ? '#4da3ff' : '#9ce43a'
+      context.strokeStyle = channel === 'interviewer' ? '#2878e8' : '#58b51c'
       context.lineWidth = 1.5
       context.beginPath()
       const middle = height / 2

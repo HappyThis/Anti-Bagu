@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from anti_bagu.interview.events import Channel, CommittedFocus, ConversationTurn
 
-
 NOISE_TEXT = frozenset({"嗯", "啊", "呃", "额", "咳", "哦", "唉", "哈"})
 
 

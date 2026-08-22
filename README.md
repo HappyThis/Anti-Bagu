@@ -25,20 +25,22 @@ Anti-Bagu 是一个面向线上面试的 AI 助手。它通过理解面试现场
 
 > 一个用 AI 对抗八股的线上面试助手。
 
-## V1 技术方案
+## Cloud Beta 技术方案
 
-V1 采用本地优先的三端架构：
+当前采用云端模块化单体和桌面 Agent：
 
 ```text
-Swift macOS 双路音频采集
-  → Python 异步实时核心
-  → React 本地 H5
+Swift macOS Agent 双路音频采集
+  → HTTPS/WSS 云端控制面与实时核心
+  → React 用户端、管理端与手机 H5
 ```
 
-- [V1 技术方案](docs/TECHNICAL_DESIGN_V1.md)
+- [Cloud Beta 技术方案](docs/CLOUD_ARCHITECTURE_V1.md)
+- [早期实时链路方案](docs/TECHNICAL_DESIGN_V1.md)
 - [项目结构](docs/PROJECT_STRUCTURE.md)
 - [模型与链路测试报告](docs/TEST_REPORT.md)
 - [Focus Token 预算实验](docs/FOCUS_TOKEN_BUDGET_REPORT.md)
+- [Cloud Beta 部署报告](docs/DEPLOYMENT_REPORT.md)
 
 ## 本地开发
 
@@ -47,6 +49,14 @@ make bootstrap
 make dev-backend
 make dev-web
 make dev-capture
+```
+
+桌面 Agent 首次使用：
+
+```bash
+swift run --package-path apps/capture-macos anti-bagu-agent login --server https://101.42.92.125 --username <用户名>
+swift run --package-path apps/capture-macos anti-bagu-agent configure-models
+swift run --package-path apps/capture-macos anti-bagu-agent start
 ```
 
 不访问外部模型的测试：

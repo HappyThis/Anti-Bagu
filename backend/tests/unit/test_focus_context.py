@@ -9,7 +9,6 @@ from anti_bagu.interview.events import (
     ConversationTurn,
 )
 
-
 SYSTEM_PROMPT = "I 表示面试官，C 表示候选人。仅返回 JSON。"
 
 

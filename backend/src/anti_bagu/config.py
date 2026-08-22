@@ -4,7 +4,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -42,6 +41,20 @@ class Settings:
     audit_include_text: bool = False
     audit_ring_size: int = 1_000
     audit_queue_size: int = 4_096
+    database_url: str = f"sqlite+aiosqlite:///{REPO_ROOT / '.runtime' / 'anti_bagu.db'}"
+    storage_dir: Path = REPO_ROOT / ".runtime" / "storage"
+    public_base_url: str = "http://127.0.0.1:5174"
+    cors_origins: tuple[str, ...] = (
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:5174",
+        "http://localhost:5174",
+    )
+    web_session_days: int = 7
+    agent_token_days: int = 30
+    admin_username: str | None = None
+    admin_password: str | None = None
+    auto_create_schema: bool = True
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -53,6 +66,20 @@ class Settings:
         ).expanduser()
         if not audit_log_dir.is_absolute():
             audit_log_dir = REPO_ROOT / audit_log_dir
+        storage_dir = Path(
+            os.environ.get("ANTIBAGU_STORAGE_DIR", str(REPO_ROOT / ".runtime" / "storage"))
+        ).expanduser()
+        if not storage_dir.is_absolute():
+            storage_dir = REPO_ROOT / storage_dir
+        default_database = f"sqlite+aiosqlite:///{REPO_ROOT / '.runtime' / 'anti_bagu.db'}"
+        cors_origins = tuple(
+            origin.strip()
+            for origin in os.environ.get(
+                "ANTIBAGU_CORS_ORIGINS",
+                "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174",
+            ).split(",")
+            if origin.strip()
+        )
         return cls(
             host=os.environ.get("ANTIBAGU_SERVER_HOST", "127.0.0.1"),
             port=int(os.environ.get("ANTIBAGU_SERVER_PORT", "8765")),
@@ -99,4 +126,18 @@ class Settings:
             in {"1", "true", "yes", "on"},
             audit_ring_size=int(os.environ.get("ANTIBAGU_LOG_RING_SIZE", "1000")),
             audit_queue_size=int(os.environ.get("ANTIBAGU_LOG_QUEUE_SIZE", "4096")),
+            database_url=os.environ.get("ANTIBAGU_DATABASE_URL", default_database),
+            storage_dir=storage_dir,
+            public_base_url=os.environ.get(
+                "ANTIBAGU_PUBLIC_BASE_URL", "http://127.0.0.1:5174"
+            ).rstrip("/"),
+            cors_origins=cors_origins,
+            web_session_days=int(os.environ.get("ANTIBAGU_WEB_SESSION_DAYS", "7")),
+            agent_token_days=int(os.environ.get("ANTIBAGU_AGENT_TOKEN_DAYS", "30")),
+            admin_username=os.environ.get("ANTIBAGU_ADMIN_USERNAME"),
+            admin_password=os.environ.get("ANTIBAGU_ADMIN_PASSWORD"),
+            auto_create_schema=os.environ.get(
+                "ANTIBAGU_AUTO_CREATE_SCHEMA", "true"
+            ).lower()
+            in {"1", "true", "yes", "on"},
         )

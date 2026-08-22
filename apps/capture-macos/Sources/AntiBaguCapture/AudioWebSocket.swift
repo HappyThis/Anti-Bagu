@@ -3,21 +3,32 @@ import Foundation
 actor AudioWebSocket {
     private let endpoint: URL
     private let metadata: AudioMetadata
+    private let authorizationToken: String?
     private let session: URLSession
     private var task: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var intentionallyClosed = false
 
-    init(endpoint: URL, metadata: AudioMetadata, session: URLSession = .shared) {
+    init(
+        endpoint: URL,
+        metadata: AudioMetadata,
+        authorizationToken: String? = nil,
+        session: URLSession = .shared
+    ) {
         self.endpoint = endpoint
         self.metadata = metadata
+        self.authorizationToken = authorizationToken
         self.session = session
     }
 
     func connect() async throws {
         guard task == nil else { return }
         intentionallyClosed = false
-        let socket = session.webSocketTask(with: endpoint)
+        var request = URLRequest(url: endpoint)
+        if let authorizationToken {
+            request.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
+        }
+        let socket = session.webSocketTask(with: request)
         socket.resume()
         let encoded = try JSONEncoder().encode(metadata)
         guard let message = String(data: encoded, encoding: .utf8) else {

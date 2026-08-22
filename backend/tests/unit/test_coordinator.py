@@ -3,6 +3,14 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from fakes.models import (
+    BlockingFocusResponder,
+    BlockingThinkingAnswerer,
+    FakeFocusResponder,
+    FakeThinkingAnswerer,
+    PreemptibleFocusResponder,
+    SequencedFocusResponder,
+)
 
 from anti_bagu.interview.context import FocusPromptBuilder
 from anti_bagu.interview.coordinator import InterviewCoordinator
@@ -16,14 +24,6 @@ from anti_bagu.interview.events import (
     TranscriptPhase,
 )
 from anti_bagu.interview.sink import MemoryEventSink
-from fakes.models import (
-    BlockingFocusResponder,
-    BlockingThinkingAnswerer,
-    FakeFocusResponder,
-    FakeThinkingAnswerer,
-    PreemptibleFocusResponder,
-    SequencedFocusResponder,
-)
 
 
 def transcript(

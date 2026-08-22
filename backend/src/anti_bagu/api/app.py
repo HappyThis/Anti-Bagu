@@ -9,22 +9,29 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from anti_bagu.agent.hub import AgentHub
 from anti_bagu.api.event_hub import EventHub
+from anti_bagu.api.routers import admin, auth, realtime, tasks, user
 from anti_bagu.asr.qwen_streaming import QwenStreamingASRSession
 from anti_bagu.audio.protocol import AudioFramePacket, AudioMetadata, pcm_level
+from anti_bagu.auth.service import AuthService
 from anti_bagu.config import Settings
 from anti_bagu.interview.context import FocusPromptBuilder, TokenEstimator
 from anti_bagu.interview.coordinator import InterviewCoordinator
 from anti_bagu.interview.events import Channel, RealtimeEvent, TranscriptEvent
 from anti_bagu.llm.deepseek import (
+    FOCUS_SYSTEM_PROMPT,
     DeepSeekFocusResponder,
     DeepSeekThinkingAnswerer,
-    FOCUS_SYSTEM_PROMPT,
     UnavailableFocusResponder,
     UnavailableThinkingAnswerer,
 )
+from anti_bagu.mobile.hub import MobileHub
+from anti_bagu.persistence.database import create_database, create_schema
+from anti_bagu.realtime.runtime import RuntimeRegistry
+from anti_bagu.tasks.model_verifier import ModelVerifier
+from anti_bagu.tasks.service import TaskService
 from anti_bagu.telemetry.audit import DailyJsonlAudit
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +47,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         queue_size=active_settings.audit_queue_size,
     )
     event_hub = EventHub(audit=audit)
+    database_engine, session_factory = create_database(active_settings.database_url)
+    auth_service = AuthService(
+        session_factory,
+        web_session_days=active_settings.web_session_days,
+        agent_token_days=active_settings.agent_token_days,
+    )
+    agent_hub = AgentHub()
+    mobile_hub = MobileHub()
+    runtime_registry = RuntimeRegistry(
+        active_settings, session_factory, audit
+    )
+    task_service = TaskService(
+        session_factory,
+        active_settings,
+        agent_hub,
+        mobile_hub,
+        runtime_registry,
+        ModelVerifier(active_settings),
+    )
 
     if active_settings.deepseek_api_key:
         focus_responder = DeepSeekFocusResponder(
@@ -76,6 +102,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        if active_settings.auto_create_schema:
+            await create_schema(database_engine)
+        await auth_service.ensure_admin(
+            active_settings.admin_username, active_settings.admin_password
+        )
         await audit.start()
         audit.emit(
             "server.started",
@@ -88,9 +119,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            await runtime_registry.close()
             await coordinator.close()
             audit.emit("server.stopped")
             await audit.close()
+            await database_engine.dispose()
 
     app = FastAPI(
         title="Anti-Bagu Realtime Core",
@@ -99,13 +132,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+        allow_origins=list(active_settings.cors_origins),
         allow_methods=["*"],
         allow_headers=["*"],
     )
     app.state.coordinator = coordinator
     app.state.event_hub = event_hub
     app.state.audit = audit
+    app.state.settings = active_settings
+    app.state.database_engine = database_engine
+    app.state.session_factory = session_factory
+    app.state.auth_service = auth_service
+    app.state.agent_hub = agent_hub
+    app.state.mobile_hub = mobile_hub
+    app.state.runtime_registry = runtime_registry
+    app.state.task_service = task_service
+
+    app.include_router(auth.router)
+    app.include_router(tasks.router)
+    app.include_router(user.router)
+    app.include_router(admin.router)
+    app.include_router(realtime.router)
 
     @app.get("/health")
     async def health() -> dict[str, object]:
@@ -116,6 +163,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "conversation_revision": coordinator.store.revision,
             "audit_log_date": time.strftime("%Y-%m-%d"),
             "audit_dropped_events": audit.dropped,
+            "database_configured": bool(active_settings.database_url),
+            "agent_connections": agent_hub.connection_count,
+            "active_task_runtimes": runtime_registry.active_count,
         }
 
     @app.get("/api/debug/events")

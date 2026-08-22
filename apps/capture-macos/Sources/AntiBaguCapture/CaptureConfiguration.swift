@@ -18,4 +18,13 @@ struct CaptureConfiguration: Sendable {
             .appending(path: "audio")
             .appending(path: channel.rawValue)
     }
+
+    func endpoint(taskID: String, for channel: AudioChannel) -> URL {
+        backendURL
+            .appending(path: "ws")
+            .appending(path: "tasks")
+            .appending(path: taskID)
+            .appending(path: "audio")
+            .appending(path: channel.rawValue)
+    }
 }

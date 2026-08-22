@@ -8,7 +8,6 @@ from openai import AsyncOpenAI
 
 from anti_bagu.interview.events import FocusResult
 
-
 PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
 FOCUS_SYSTEM_PROMPT = (PROMPT_DIR / "focus_responder.txt").read_text(
     encoding="utf-8"

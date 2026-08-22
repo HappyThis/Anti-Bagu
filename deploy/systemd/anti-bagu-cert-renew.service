@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew Anti-Bagu short-lived IP certificate
+After=network-online.target nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/certbot renew --quiet --deploy-hook "systemctl reload nginx"

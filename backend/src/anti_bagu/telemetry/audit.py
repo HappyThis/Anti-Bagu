@@ -14,7 +14,6 @@ from typing import Any
 
 from anti_bagu.interview.events import RealtimeEvent
 
-
 _TEXT_FIELDS = {"answer", "delta", "prompt", "question", "text"}
 _SECRET_FIELDS = {
     "api_key",

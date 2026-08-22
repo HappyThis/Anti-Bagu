@@ -205,7 +205,7 @@ export function useRealtimeSession(url: string) {
     let socket: WebSocket | undefined
 
     const connect = () => {
-      if (disposed) return
+      if (disposed || !url) return
       dispatch({ type: 'connection', value: 'connecting' })
       socket = new WebSocket(url)
       socket.addEventListener('open', () => {

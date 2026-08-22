@@ -4,7 +4,7 @@ import asyncio
 import time
 import uuid
 
-from anti_bagu.interview.context import FocusPromptBuildResult, FocusPromptBuilder
+from anti_bagu.interview.context import FocusPromptBuilder, FocusPromptBuildResult
 from anti_bagu.interview.conversation import ConversationStore
 from anti_bagu.interview.events import (
     AnswerMode,
@@ -235,6 +235,15 @@ class InterviewCoordinator:
                 "compacted": prompt.compacted,
             },
         )
+        await self._emit(
+            "internal.llm.request",
+            {
+                "operation": "focus",
+                "generation": generation,
+                "prompt": prompt.markdown,
+                "estimated_prompt_tokens": prompt.estimated_total_tokens,
+            },
+        )
         self._focus_task = asyncio.create_task(
             self._run_focus_attempt(generation, prompt)
         )
@@ -271,6 +280,18 @@ class InterviewCoordinator:
                     "action": result.action.value,
                     "mode": result.answer_mode.value,
                     "question": result.focus_question,
+                    "duration_ms": duration_ms,
+                },
+            )
+            await self._emit(
+                "internal.llm.response",
+                {
+                    "operation": "focus",
+                    "generation": generation,
+                    "action": result.action.value,
+                    "mode": result.answer_mode.value,
+                    "question": result.focus_question,
+                    "answer": result.answer,
                     "duration_ms": duration_ms,
                 },
             )
@@ -378,9 +399,19 @@ class InterviewCoordinator:
         model_started_at = time.time()
         first_chunk = True
         try:
+            conversation = self.store.recent_conversation_payload()
+            await self._emit(
+                "internal.llm.request",
+                {
+                    "operation": "thinking_answer",
+                    "focus_id": focus_id,
+                    "question": question,
+                    "conversation": conversation,
+                },
+            )
             async for chunk in self._thinking_answerer.stream_answer(
                 question=question,
-                conversation=self.store.recent_conversation_payload(),
+                conversation=conversation,
             ):
                 if first_chunk:
                     first_chunk = False

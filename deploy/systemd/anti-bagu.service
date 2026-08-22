@@ -1,0 +1,23 @@
+[Unit]
+Description=Anti-Bagu cloud control plane
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=antibagu
+Group=antibagu
+WorkingDirectory=/opt/anti-bagu
+EnvironmentFile=/etc/anti-bagu/anti-bagu.env
+ExecStart=/opt/anti-bagu/.venv/bin/uvicorn anti_bagu.main:app --host 127.0.0.1 --port 8765 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/anti-bagu
+
+[Install]
+WantedBy=multi-user.target

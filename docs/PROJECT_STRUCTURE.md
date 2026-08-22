@@ -1,225 +1,130 @@
 # Anti-Bagu 项目结构
 
-状态：V1 已实现
-日期：2026-08-21
+状态：Cloud Beta 已实现
+日期：2026-08-22
 
-## 总体结构
+## 架构原则
 
-项目采用 monorepo、本地优先、三端分层架构：
+当前阶段采用模块化单体，而不是微服务。实时链路、控制面和持久化边界清晰分离，但部署为一个 Python 进程，避免在 2 核 4G 服务器上引入 Redis、消息队列和服务间网络开销。
 
 ```text
-Swift macOS 采集器
-  → localhost WebSocket
-Python 异步实时核心
-  → localhost WebSocket
-React 本地 H5
+macOS Agent ── WSS 控制通道 ───────────────┐
+             ├── WSS interviewer PCM ─────┤
+             └── WSS candidate PCM ───────┤
+                                           ▼
+React Web / Mobile H5 ── HTTPS/WSS ── FastAPI modular monolith
+                                           ├── PostgreSQL
+                                           └── local task storage
 ```
 
-Python 后端采用模块化单体，不拆微服务。V1 只为已经存在的职责建目录，避免提前创建 RAG、视觉、数据库等空模块。
-
-## 当前目录
+## 目录
 
 ```text
 Anti-Bagu/
 ├── apps/
-│   ├── capture-macos/
-│   │   ├── Package.swift
+│   ├── capture-macos/                 # anti-bagu-agent
 │   │   ├── Sources/AntiBaguCapture/
 │   │   │   ├── AntiBaguCaptureApp.swift
-│   │   │   ├── AudioMetadata.swift
-│   │   │   ├── AudioWebSocket.swift
-│   │   │   ├── CaptureConfiguration.swift
-│   │   │   └── CapturePermissions.swift
-│   │   └── Tests/AntiBaguCaptureTests/
-│   │
+│   │   │   ├── AgentAPI.swift
+│   │   │   ├── AgentControlClient.swift
+│   │   │   ├── AgentCredentials.swift
+│   │   │   ├── CaptureSession.swift
+│   │   │   └── ... audio capture/transport
+│   │   └── Tests/
 │   └── web/
-│       ├── package.json
-│       ├── vite.config.ts
 │       └── src/
-│           ├── app/
-│           ├── features/
-│           │   ├── answer/
-│           │   ├── diagnostics/
-│           │   ├── session/
-│           │   └── transcript/
-│           └── shared/
-│
+│           ├── app/                   # routing and access guards
+│           ├── features/              # high-frequency realtime UI
+│           ├── product/               # user/admin/mobile product pages
+│           └── shared/                # API and wire protocol
 ├── backend/
-│   ├── pyproject.toml
-│   ├── src/anti_bagu/
-│   │   ├── main.py
-│   │   ├── config.py
-│   │   ├── api/
-│   │   ├── audio/
-│   │   ├── asr/
-│   │   ├── interview/
-│   │   └── llm/
-│   └── tests/
-│       ├── fakes/
-│       └── unit/
-│
-├── protocol/
-│   ├── schemas/
-│   └── examples/
-│
-├── tests/                         # 已有模型与 ASR 评测
-│   └── fixtures/
-├── scripts/                       # 已有实时模型测试脚本
+│   ├── migrations/                    # Alembic schema history
+│   └── src/anti_bagu/
+│       ├── agent/                     # desktop control connections
+│       ├── api/
+│       │   ├── routers/               # HTTP/WebSocket transport only
+│       │   ├── dependencies.py
+│       │   └── schemas.py
+│       ├── asr/                       # Qwen streaming adapter
+│       ├── audio/                     # PCM protocol validation
+│       ├── auth/                      # activation/login/session service
+│       ├── core/                      # security primitives
+│       ├── interview/                 # Focus/context/state machine
+│       ├── llm/                       # DeepSeek adapters and prompts
+│       ├── mobile/                    # ephemeral QR pairing
+│       ├── persistence/               # SQLAlchemy and task artifacts
+│       ├── realtime/                  # per-task runtime registry
+│       ├── tasks/                     # lifecycle and preflight service
+│       └── telemetry/                 # redacted daily platform log
+├── deploy/
+│   ├── nginx/                         # HTTP bootstrap + HTTPS/WSS config
+│   ├── systemd/                       # app and certificate timers
+│   └── scripts/                       # repeatable release deployment
+├── protocol/                          # cross-client JSON/PCM contracts
 ├── docs/
-│   ├── assets/
-│   ├── PROJECT_STRUCTURE.md
-│   ├── TECHNICAL_DESIGN_V1.md
-│   └── TEST_REPORT.md
-├── Makefile
-├── .env.example
-└── README.md
+├── tests/                             # paid model/latency evaluations
+└── scripts/                           # model and ASR experiments
 ```
 
-## 模块边界
-
-### `apps/capture-macos`
-
-负责 macOS 权限、系统音频、麦克风和 PCM 传输。它只知道本地音频协议，不知道 ASR、DeepSeek 和面试状态机。
-
-当前已实现：
-
-- macOS 13+ Swift Package。
-- 屏幕录制和麦克风权限状态检查。
-- `interviewer` 与 `candidate` 独立 WebSocket 地址。
-- 16kHz、单声道、`pcm_s16le` 元数据。
-- 二进制音频 WebSocket 客户端。
-- ScreenCaptureKit 系统音频采集。
-- AVAudioEngine 麦克风采集。
-- AVAudioConverter 16kHz 单声道 PCM 转换。
-- 100ms 音频帧时间戳和自动重连队列。
-- 协议和端点单元测试。
-
-### `apps/web`
-
-负责显示，不直接访问云端 API。
-
-当前已实现：
-
-- React + TypeScript + Vite。
-- 单一后端 WebSocket 连接和自动重连。
-- 面试官与候选人双栏 partial/final 转写。
-- 当前问题、FAST/THINK 状态与回答。
-- 增量 THINK 答案。
-- 两路 Canvas 实时声波，音频采样不触发整页 React 重渲染。
-- 采集、ASR、模型和端到端真实延迟。
-- 本地清空交互。
-- 延迟诊断栏和响应式布局。
-
-### `backend/api`
-
-FastAPI 传输边界：
-
-- `GET /health`
-- `POST /api/transcripts`
-- `WS /ws/ui`
-- `WS /ws/audio/interviewer`
-- `WS /ws/audio/candidate`
-
-路由只负责协议转换，不包含候选人触发规则。
-
-### `backend/audio`
-
-定义和校验 V1 PCM 元数据。每个 100ms 音频包由 8 字节采集时间戳和 3200 字节 PCM 组成，总长度 3208 字节。
-
-### `backend/asr`
-
-包含 ASR Session 接口和双路 Qwen Streaming 生产实现。云端连接失败时后端最多自动重连三次，本地音频 WebSocket 不随单次云端故障关闭。
-
-### `backend/interview`
-
-V1 的业务核心：
-
-- `conversation.py`：完整 final 日志和 committed Focus/Answer 历史。
-- `context.py`：8K Token 估算、历史 Focus 与最近对话 Markdown 构建。
-- `coordinator.py`：300ms 合并窗口、generation 抢占和 FAST/THINK 生命周期。
-- `events.py`：内部 Pydantic 协议。
-- `state.py`：实时会话状态。
-
-已固定的行为：
-
-- `interviewer.final` 进入 300ms 合并窗口，窗口结束后调用 Focus。
-- 新的 `interviewer.partial` 只重置窗口，不取消运行中的 Focus。
-- `candidate.final` 只追加上下文，不推进 revision，不调用模型。
-- `candidate.partial` 不取消模型。
-- 新 Focus generation 抢占旧请求，迟到结果不能提交。
-- 新 committed Focus 才取消旧 THINK 答案，并保留已显示内容。
-
-### `backend/llm`
-
-只负责执行一次模型请求，不决定调用时机：
-
-- `DeepSeekFocusResponder`：关闭思考、解析结构化输出。
-- `DeepSeekThinkingAnswerer`：Thinking High、增量输出。
-- 独立、版本化的 Prompt 文件。
-- 未配置 Key 时的可启动降级实现。
-
-### `protocol`
-
-Swift、Python 和 TypeScript 的协议事实来源。目前保存 JSON Schema 和示例。类型自动生成在协议稳定后再引入。
-
-## 依赖规则
+## 模块依赖
 
 ```text
-API/音频/ASR
-      ↓
-Interview Coordinator
-      ↓
-Conversation + LLM ports
-      ↓
-DeepSeek/Qwen implementations
+API routers
+    ↓
+AuthService / TaskService / AgentHub / MobileHub
+    ↓
+RuntimeRegistry ── InterviewCoordinator ── ASR/LLM adapters
+    ↓
+SQLAlchemy metadata + TaskEventRecorder + PCMArchive
 ```
 
-- Swift 不读取云端 API Key。
-- React 不直接调用 ASR 或 LLM。
-- FastAPI 路由不直接调用 OpenAI SDK。
-- LLM 模块不知道音频和 WebSocket。
-- 候选人触发规则只存在于 `InterviewCoordinator`。
-- 环境变量只由 `backend/config.py` 读取。
+依赖规则：
 
-## 测试分层
+- Router 只处理鉴权、协议转换和 HTTP 状态码。
+- 任务状态迁移只允许由 `TaskService` 执行。
+- Focus 触发规则只存在于 `InterviewCoordinator`。
+- 用户模型 Key 不进入数据库、平台日志或浏览器存储。
+- 高频 `audio.level` 不落数据库；转写、Focus、回答、延迟、错误和完整 LLM 输入都按任务保存。
+- 每个任务拥有独立 Coordinator、EventHub、事件队列和内存模型客户端。
+- Beta 只运行一个 Uvicorn worker；多 worker 之前必须把连接路由迁移到 Redis。
 
-`backend/tests` 是默认不访问网络的产品测试，目前覆盖：
+## 数据边界
 
-- candidate final 零模型调用。
-- 快速连续 interviewer final 合并为单次 Focus。
-- candidate final 不取消正在运行的请求。
-- interviewer partial 不取消旧请求。
-- 新 generation 抢占旧 Focus，但保留全部 final。
-- THINK 增量事件。
-- 中断 THINK 后保存已显示推荐内容。
-- 8K Prompt 尽量使用可用空间且不超过预算。
-- Focus 输出协议校验。
-- PCM 元数据校验。
-- 时间戳音频包、PCM 声级和 Qwen 结果映射。
-- 新 UI 连接的音频状态与延迟快照重放。
+PostgreSQL：
 
-根目录现有 `tests` 和 `scripts` 是真实模型评测，不随普通 `make test` 运行，避免自动产生 API 费用。
+- `users`
+- `activation_keys`
+- `auth_sessions`
+- `tasks`
+- `task_events`
+- `agent_devices`
+- `platform_audit`
 
-## 开发命令
-
-```bash
-make bootstrap
-make dev-backend
-make dev-web
-make dev-capture
-make test
-make build-web
-make check
-```
-
-## 后续扩展
-
-只有功能开始实现时再创建对应模块：
+本地任务目录：
 
 ```text
-backend/src/anti_bagu/knowledge/    # RAG verified_facts
-backend/src/anti_bagu/vision/       # 手动截图理解
-apps/mobile-web/                    # 手机端
+/var/lib/anti-bagu/storage/tasks/<task-id>/
+├── events/YYYY-MM-DD.jsonl
+└── audio/
+    ├── interviewer.pcm
+    ├── interviewer.json
+    ├── candidate.pcm
+    └── candidate.json
 ```
 
-这些扩展通过已有事件和 LLM 接口接入，不修改候选人不触发规则。
+平台日志保存在 `/var/lib/anti-bagu/logs/YYYY-MM-DD.jsonl`，默认脱敏正文和所有 Token/Key。
+
+## 鉴权
+
+- Web Session：随机不可预测的 opaque token，默认 7 天，数据库只保存 SHA-256。
+- Agent Token：CLI 使用用户名密码登录后签发，默认 30 天，保存在 macOS Keychain。
+- 模型 Key：只保存在 macOS Keychain；任务预检时通过 WSS 临时发送到单个任务运行时内存。
+- 手机端：任务所有者生成 10 分钟临时配对 Token，扫码后只订阅当前任务的 Focus 和回答事件。
+
+## 部署约束
+
+- Ubuntu 24.04、Nginx、PostgreSQL 16、Python 3.12。
+- FastAPI 只监听 `127.0.0.1:8765`。
+- Nginx 是唯一公网入口，负责 React SPA、HTTPS 和 WebSocket Upgrade。
+- Let’s Encrypt 可信 IP 证书有效约 6 天，systemd timer 每天两次检查续期。
+- systemd 使用独立 `antibagu` 用户，应用只能写 `/var/lib/anti-bagu`。

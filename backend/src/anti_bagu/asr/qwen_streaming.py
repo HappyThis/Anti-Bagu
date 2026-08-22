@@ -15,7 +15,6 @@ from anti_bagu.interview.events import (
     TranscriptPhase,
 )
 
-
 TranscriptHandler = Callable[[TranscriptEvent], Awaitable[None]]
 
 

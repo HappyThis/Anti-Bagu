@@ -1,0 +1,7 @@
+[Unit]
+Description=Back up Anti-Bagu PostgreSQL and local task storage
+After=postgresql.service anti-bagu.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/anti-bagu/deploy/scripts/backup-server.sh
