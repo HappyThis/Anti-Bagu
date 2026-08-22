@@ -81,9 +81,6 @@ class TaskRuntime:
             debounce_seconds=self.settings.focus_debounce_ms / 1000,
             max_coalesce_seconds=self.settings.focus_max_coalesce_ms / 1000,
             focus_timeout_seconds=self.settings.focus_timeout_seconds,
-            echo_suppression_window_seconds=(
-                self.settings.echo_suppression_window_seconds
-            ),
         )
 
     async def _close_models(self) -> None:

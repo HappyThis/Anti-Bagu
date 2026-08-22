@@ -130,8 +130,10 @@ class TaskService:
             return task, checks
 
         permissions = result.get("permissions") or {}
+        audio_processing = result.get("audio_processing") or {}
         screen_ok = bool(permissions.get("screen_capture"))
         mic_ok = bool(permissions.get("microphone"))
+        aec3_ok = bool(audio_processing.get("aec3"))
         checks.extend(
             (
                 PreflightCheck(
@@ -145,6 +147,12 @@ class TaskService:
                     label="麦克风",
                     ok=mic_ok,
                     detail="权限正常" if mic_ok else "缺少麦克风权限",
+                ),
+                PreflightCheck(
+                    key="aec3",
+                    label="回声消除",
+                    ok=aec3_ok,
+                    detail="AEC3 已就绪" if aec3_ok else "电脑助手缺少 AEC3 组件，请重新下载",
                 ),
             )
         )

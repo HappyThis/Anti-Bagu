@@ -107,9 +107,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         debounce_seconds=active_settings.focus_debounce_ms / 1000,
         max_coalesce_seconds=active_settings.focus_max_coalesce_ms / 1000,
         focus_timeout_seconds=active_settings.focus_timeout_seconds,
-        echo_suppression_window_seconds=(
-            active_settings.echo_suppression_window_seconds
-        ),
     )
 
     @asynccontextmanager

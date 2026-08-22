@@ -39,7 +39,10 @@ export function ReviewDetailPage() {
       .finally(() => setLoading(false))
   }, [reviewId, session])
 
-  const timeline = useMemo(() => visibleTimeline(events), [events])
+  const timeline = useMemo(
+    () => events.filter((event) => DISPLAYED_EVENTS.has(event.event_type)),
+    [events],
+  )
   const focuses = events.filter((event) => event.event_type === 'focus.updated')
   const answers = events.filter((event) => event.event_type === 'answer.completed')
   const interrupted = events.filter((event) => event.event_type === 'answer.cancelled')
@@ -83,75 +86,6 @@ export function ReviewDetailPage() {
       </div>
     </section>
   )
-}
-
-function visibleTimeline(events: TaskEventRecord[]) {
-  const interviewerFinals: TaskEventRecord[] = []
-  const visible: TaskEventRecord[] = []
-  for (const event of events) {
-    if (event.event_type === 'transcript.final') {
-      const channel = String(event.payload.channel ?? '')
-      if (channel === 'interviewer') {
-        interviewerFinals.push(event)
-        if (interviewerFinals.length > 12) interviewerFinals.shift()
-      } else if (
-        channel === 'candidate'
-        && interviewerFinals.some((reference) => isCrossChannelEcho(reference, event))
-      ) {
-        continue
-      }
-    }
-    if (DISPLAYED_EVENTS.has(event.event_type)) visible.push(event)
-  }
-  return visible
-}
-
-function isCrossChannelEcho(interviewer: TaskEventRecord, candidate: TaskEventRecord) {
-  const reference = normalizeTranscript(String(interviewer.payload.text ?? ''))
-  const comparison = normalizeTranscript(String(candidate.payload.text ?? ''))
-  if (reference.length < 4 || comparison.length < 4) return false
-  const delay = Math.abs(transcriptTime(candidate) - transcriptTime(interviewer))
-  if (delay > 3000) return false
-  const lengthRatio = Math.min(reference.length, comparison.length) / Math.max(reference.length, comparison.length)
-  if (reference === comparison && lengthRatio >= 0.8) return true
-  return audioOverlapRatio(interviewer, candidate) >= 0.6
-    && lengthRatio >= 0.65
-    && sequenceSimilarity(reference, comparison) >= 0.6
-}
-
-function normalizeTranscript(text: string) {
-  return text.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
-}
-
-function transcriptTime(event: TaskEventRecord) {
-  const audioEndedAt = Number(event.payload.audio_ended_at)
-  return Number.isFinite(audioEndedAt) ? audioEndedAt * 1000 : new Date(event.created_at).getTime()
-}
-
-function audioOverlapRatio(first: TaskEventRecord, second: TaskEventRecord) {
-  const firstStart = Number(first.payload.audio_started_at)
-  const firstEnd = Number(first.payload.audio_ended_at)
-  const secondStart = Number(second.payload.audio_started_at)
-  const secondEnd = Number(second.payload.audio_ended_at)
-  if (![firstStart, firstEnd, secondStart, secondEnd].every(Number.isFinite)) return 0
-  const overlap = Math.max(0, Math.min(firstEnd, secondEnd) - Math.max(firstStart, secondStart))
-  const shorter = Math.min(firstEnd - firstStart, secondEnd - secondStart)
-  return shorter > 0 ? overlap / shorter : 0
-}
-
-function sequenceSimilarity(first: string, second: string) {
-  const row = new Array<number>(second.length + 1).fill(0)
-  for (const firstCharacter of first) {
-    let diagonal = 0
-    for (let index = 1; index <= second.length; index += 1) {
-      const previous = row[index]
-      row[index] = firstCharacter === second[index - 1]
-        ? diagonal + 1
-        : Math.max(row[index], row[index - 1])
-      diagonal = previous
-    }
-  }
-  return (2 * row[second.length]) / (first.length + second.length)
 }
 
 function eventView(event: TaskEventRecord) {

@@ -22,6 +22,7 @@ const FAILURE_COPY: Record<string, string> = {
   agent_response: '电脑助手暂时没有响应',
   system_audio: '暂时听不到面试声音',
   microphone: '暂时听不到你的声音',
+  aec3: '麦克风回声消除还没有准备好',
   asr: '问题识别功能还没有准备好',
   llm: '回答功能还没有准备好',
   mobile: '请先连接手机',
@@ -88,7 +89,7 @@ export function TaskWorkspacePage() {
   const activeTask = task
   const ready = activeTask.status === 'ready'
   const computerReady = checkMap.get('agent')?.ok === true
-  const soundKeys = ['system_audio', 'microphone', 'asr', 'llm']
+  const soundKeys = ['system_audio', 'microphone', 'aec3', 'asr', 'llm']
   const soundReady = soundKeys.every((key) => checkMap.get(key)?.ok === true)
   const currentStep = ready ? 3 : computerReady ? 2 : 1
   const firstProblem = checks.find((check) => !check.ok)

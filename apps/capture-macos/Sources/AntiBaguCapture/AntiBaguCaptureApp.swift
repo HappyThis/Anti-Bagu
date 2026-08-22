@@ -48,6 +48,7 @@ struct AntiBaguCaptureApp {
         print("服务：\(configuration?.serverURL.absoluteString ?? "未配置")")
         print("用户：\(configuration?.username ?? "未登录")")
         print("登录状态：\(token == nil ? "未登录" : "已登录")")
+        print("回声消除：\(AEC3NativeProcessor.isAvailable() ? "已准备" : "缺少组件")")
         let permissions = CapturePermissions.current()
         print("面试声音：\(permissions.screenCaptureGranted ? "已允许" : "需要允许")")
         print("我的声音：\(permissions.microphoneGranted ? "已允许" : "需要允许")")

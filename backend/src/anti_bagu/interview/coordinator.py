@@ -6,7 +6,6 @@ import uuid
 
 from anti_bagu.interview.context import FocusPromptBuilder, FocusPromptBuildResult
 from anti_bagu.interview.conversation import ConversationStore
-from anti_bagu.interview.echo import CrossChannelEchoSuppressor
 from anti_bagu.interview.events import (
     AnswerMode,
     AnswerStatus,
@@ -33,7 +32,6 @@ class InterviewCoordinator:
         debounce_seconds: float = 0.3,
         max_coalesce_seconds: float = 1.2,
         focus_timeout_seconds: float = 5.0,
-        echo_suppression_window_seconds: float = 3.0,
     ) -> None:
         self.session_id = session_id or str(uuid.uuid4())
         self.store = ConversationStore()
@@ -45,9 +43,6 @@ class InterviewCoordinator:
         self._debounce_seconds = debounce_seconds
         self._max_coalesce_seconds = max_coalesce_seconds
         self._focus_timeout_seconds = focus_timeout_seconds
-        self._echo_suppressor = CrossChannelEchoSuppressor(
-            window_seconds=echo_suppression_window_seconds
-        )
 
         self._seen_final_events: set[str] = set()
         self._debounce_task: asyncio.Task[None] | None = None
@@ -70,8 +65,10 @@ class InterviewCoordinator:
         return self._focus_generation
 
     async def handle_transcript(self, event: TranscriptEvent) -> None:
+        await self._emit(
+            f"transcript.{event.phase.value}", self._transcript_payload(event)
+        )
         if event.phase is TranscriptPhase.PARTIAL:
-            await self._emit("transcript.partial", self._transcript_payload(event))
             await self._handle_partial(event)
             return
 
@@ -86,22 +83,6 @@ class InterviewCoordinator:
             )
             return
         self._seen_final_events.add(event.event_id)
-
-        echo = self._echo_suppressor.match_candidate(event)
-        if echo is not None:
-            await self._emit(
-                "transcript.echo_suppressed",
-                {
-                    **self._transcript_payload(event),
-                    "matched_interviewer_event_id": echo.interviewer_event_id,
-                    "similarity": echo.similarity,
-                    "delay_ms": echo.delay_seconds * 1000,
-                    "audio_overlap_ratio": echo.overlap_ratio,
-                },
-            )
-            return
-
-        await self._emit("transcript.final", self._transcript_payload(event))
         turn = self.store.append_final(event)
         await self._emit(
             "transcript.committed",
@@ -116,7 +97,6 @@ class InterviewCoordinator:
         if event.channel is Channel.CANDIDATE:
             return
 
-        self._echo_suppressor.remember_interviewer(event)
         self._last_interviewer_audio_end = event.audio_ended_at
         if event.audio_ended_at is not None:
             await self._emit(

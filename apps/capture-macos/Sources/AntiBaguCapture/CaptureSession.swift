@@ -11,6 +11,7 @@ actor CaptureSession {
     private var candidatePump: AudioFramePump?
     private var systemAudio: SystemAudioCapture?
     private var microphone: MicrophoneCapture?
+    private var aecSynchronizer: AEC3AudioSynchronizer?
 
     init(serverURL: URL, token: String, permissions: CapturePermissions) {
         self.serverURL = serverURL
@@ -24,73 +25,83 @@ actor CaptureSession {
         let configuration = CaptureConfiguration(
             backendURL: websocketBaseURL(serverURL)
         )
-        var startedChannel = false
-
-        if permissions.microphoneGranted {
-            let socket = AudioWebSocket(
-                endpoint: configuration.endpoint(taskID: taskID, for: .candidate),
-                metadata: configuration.metadata,
-                authorizationToken: token
-            )
-            let pump = AudioFramePump(socket: socket, label: "Microphone")
-            let encoder = PCMFrameEncoder { packet in pump.submit(packet) }
-            let capture = MicrophoneCapture(encoder: encoder)
-            pump.start()
-            do {
-                try await socket.connect()
-                try capture.start()
-                candidateSocket = socket
-                candidatePump = pump
-                microphone = capture
-                startedChannel = true
-            } catch {
-                capture.stop()
-                await pump.stop()
-                await socket.close()
-                throw error
-            }
+        guard permissions.microphoneGranted, permissions.screenCaptureGranted else {
+            throw CaptureSessionError.bothChannelsRequired
         }
 
-        if permissions.screenCaptureGranted {
-            let socket = AudioWebSocket(
-                endpoint: configuration.endpoint(taskID: taskID, for: .interviewer),
-                metadata: configuration.metadata,
-                authorizationToken: token
-            )
-            let pump = AudioFramePump(socket: socket, label: "System audio")
-            let encoder = PCMFrameEncoder { packet in pump.submit(packet) }
-            let capture = SystemAudioCapture(encoder: encoder)
-            pump.start()
-            do {
-                try await socket.connect()
-                try await capture.start()
-                interviewerSocket = socket
-                interviewerPump = pump
-                systemAudio = capture
-                startedChannel = true
-            } catch {
-                await capture.stop()
-                await pump.stop()
-                await socket.close()
-                await stop()
-                throw error
-            }
+        let interviewerSocket = AudioWebSocket(
+            endpoint: configuration.endpoint(taskID: taskID, for: .interviewer),
+            metadata: configuration.metadata,
+            authorizationToken: token
+        )
+        let candidateSocket = AudioWebSocket(
+            endpoint: configuration.endpoint(taskID: taskID, for: .candidate),
+            metadata: configuration.metadata,
+            authorizationToken: token
+        )
+        let interviewerPump = AudioFramePump(
+            socket: interviewerSocket,
+            label: "System audio"
+        )
+        let candidatePump = AudioFramePump(
+            socket: candidateSocket,
+            label: "AEC3 microphone"
+        )
+        let synchronizer = AEC3AudioSynchronizer(
+            processor: try AEC3NativeProcessor()
+        ) { packet in
+            candidatePump.submit(packet)
+        }
+        let microphoneEncoder = PCMFrameEncoder { packet in
+            synchronizer.submitCapture(packet)
+        }
+        let systemEncoder = PCMFrameEncoder { packet in
+            interviewerPump.submit(packet)
+            synchronizer.submitRender(packet)
+        }
+        let microphone = MicrophoneCapture(encoder: microphoneEncoder)
+        let systemAudio = SystemAudioCapture(encoder: systemEncoder)
+
+        interviewerPump.start()
+        candidatePump.start()
+        do {
+            try await interviewerSocket.connect()
+            try await candidateSocket.connect()
+            try await systemAudio.start()
+            try microphone.start()
+        } catch {
+            microphone.stop()
+            await systemAudio.stop()
+            synchronizer.flush()
+            await interviewerPump.stop()
+            await candidatePump.stop()
+            await interviewerSocket.close()
+            await candidateSocket.close()
+            throw error
         }
 
-        guard startedChannel else { throw CaptureSessionError.noAvailableChannel }
+        self.interviewerSocket = interviewerSocket
+        self.candidateSocket = candidateSocket
+        self.interviewerPump = interviewerPump
+        self.candidatePump = candidatePump
+        self.systemAudio = systemAudio
+        self.microphone = microphone
+        aecSynchronizer = synchronizer
         activeTaskID = taskID
-        print("任务 \(taskID) 已开始双路采集")
+        print("任务 \(taskID) 已开始 AEC3 双路采集")
     }
 
     func stop() async {
         microphone?.stop()
         await systemAudio?.stop()
+        aecSynchronizer?.flush()
         await interviewerPump?.stop()
         await candidatePump?.stop()
         await interviewerSocket?.close()
         await candidateSocket?.close()
         microphone = nil
         systemAudio = nil
+        aecSynchronizer = nil
         interviewerPump = nil
         candidatePump = nil
         interviewerSocket = nil
@@ -107,5 +118,5 @@ actor CaptureSession {
 }
 
 enum CaptureSessionError: Error {
-    case noAvailableChannel
+    case bothChannelsRequired
 }

@@ -40,7 +40,7 @@ actor AgentControlClient {
                 "device_key": Host.current().localizedName ?? "macos-default",
                 "name": Host.current().localizedName ?? "macOS Agent",
                 "platform": "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
-                "agent_version": "0.4.0",
+                "agent_version": "0.5.0",
             ],
         ])
         heartbeat = Task { [weak self] in
@@ -79,6 +79,9 @@ actor AgentControlClient {
                 "permissions": [
                     "screen_capture": permissions.screenCaptureGranted,
                     "microphone": permissions.microphoneGranted,
+                ],
+                "audio_processing": [
+                    "aec3": AEC3NativeProcessor.isAvailable(),
                 ],
             ])
         case "task.start", "task.resume":
