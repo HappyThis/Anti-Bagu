@@ -14,7 +14,10 @@ export function AnswerCardCarousel({ cards, onClear }: { cards: AnswerCard[]; on
     if (!initialized.current && cards.length) {
       initialized.current = true
       previousLength.current = cards.length
-      moveTo(cards.length - 1, 'auto')
+      const frame = window.requestAnimationFrame(() => {
+        moveTo(cards.length - 1, 'auto')
+      })
+      return () => window.cancelAnimationFrame(frame)
     }
   }, [cards.length])
 
