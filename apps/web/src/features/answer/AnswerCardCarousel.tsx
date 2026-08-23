@@ -40,7 +40,13 @@ export function AnswerCardCarousel({ cards, onClear }: { cards: AnswerCard[]; on
     setIndex(bounded)
     if (bounded === cards.length - 1) setUnseen(false)
     const viewport = viewportRef.current
-    if (viewport) viewport.scrollTo({ left: bounded * viewport.clientWidth, behavior })
+    if (!viewport) return
+    const left = bounded * viewport.clientWidth
+    if (behavior === 'auto') {
+      viewport.scrollLeft = left
+    } else {
+      viewport.scrollTo({ left, behavior })
+    }
   }
 
   function updateIndexFromScroll() {
