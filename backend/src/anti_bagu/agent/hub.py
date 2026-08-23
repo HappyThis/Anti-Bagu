@@ -32,6 +32,7 @@ class AgentHub:
             str, tuple[str, asyncio.Future[dict[str, Any]]]
         ] = {}
         self._lock = asyncio.Lock()
+        self._audio_tests: dict[tuple[str, str], dict[str, Any]] = {}
 
     def get(self, user_id: str) -> AgentConnection | None:
         return self._connections.get(user_id)
@@ -63,6 +64,9 @@ class AgentHub:
                 if not future.done():
                     future.set_exception(AgentUnavailable("桌面 Agent 已断开"))
                 self._pending.pop(request_id, None)
+        for key in tuple(self._audio_tests):
+            if key[0] == user_id:
+                self._audio_tests.pop(key, None)
 
     async def send(self, user_id: str, payload: dict[str, Any]) -> None:
         connection = self._connections.get(user_id)
@@ -96,6 +100,9 @@ class AgentHub:
         connection = self._connections.get(user_id)
         if connection is not None:
             connection.last_seen_at = time.time()
+        if payload.get("type") == "preflight.audio.level":
+            self.update_audio_level(user_id, payload)
+            return
         if payload.get("type") != "preflight.result":
             return
         request_id = str(payload.get("request_id", ""))
@@ -104,6 +111,34 @@ class AgentHub:
             pending_user_id, future = pending
             if pending_user_id == user_id and not future.done():
                 future.set_result(payload)
+
+    def start_audio_test(self, user_id: str, task_id: str) -> None:
+        self._audio_tests[(user_id, task_id)] = {
+            "active": True,
+            "started_at": time.time(),
+            "levels": {},
+        }
+
+    def stop_audio_test(self, user_id: str, task_id: str) -> None:
+        state = self._audio_tests.get((user_id, task_id))
+        if state is not None:
+            state["active"] = False
+
+    def update_audio_level(self, user_id: str, payload: dict[str, Any]) -> None:
+        task_id = str(payload.get("task_id", ""))
+        channel = str(payload.get("channel", ""))
+        state = self._audio_tests.get((user_id, task_id))
+        if state is None or not state["active"] or channel not in {"interviewer", "candidate"}:
+            return
+        state["levels"][channel] = {
+            "rms": max(0.0, float(payload.get("rms", 0.0))),
+            "peak": max(0.0, float(payload.get("peak", 0.0))),
+            "at": time.time(),
+        }
+
+    def audio_test_state(self, user_id: str, task_id: str) -> dict[str, Any]:
+        state = self._audio_tests.get((user_id, task_id))
+        return state or {"active": False, "levels": {}}
 
     @property
     def connection_count(self) -> int:

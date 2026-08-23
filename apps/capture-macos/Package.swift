@@ -22,6 +22,7 @@ let package = Package(
             linkerSettings: [
                 .unsafeFlags(["-L", aec3LibraryDirectory, "-lanti-bagu-aec3"]),
                 .linkedFramework("CoreFoundation"),
+                .linkedFramework("Carbon"),
                 .linkedLibrary("c++"),
             ]
         ),

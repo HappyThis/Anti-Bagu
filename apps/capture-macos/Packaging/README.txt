@@ -12,6 +12,13 @@ The login session is stored in ~/.anti-bagu/session.json with owner-only
 permissions. Model service keys are managed on the website under Settings and
 are never requested by the CLI.
 
+SCREENSHOT
+
+While an interview is running, press Option+Space to capture the display under
+the pointer. The screenshot is analyzed as an exclusive task, so spoken
+questions cannot interrupt it. A second screenshot is ignored until the first
+analysis finishes.
+
 PERMISSIONS
 
 The first launch requests two separate macOS permissions:

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import base64
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from anti_bagu.api.app import create_app
 from anti_bagu.config import Settings
 from anti_bagu.credentials.service import ModelCredentials
-from anti_bagu.persistence.models import UserModelCredentials
+from anti_bagu.persistence.models import Task, User, UserModelCredentials
 from anti_bagu.tasks.model_verifier import VerificationResult
 
 
@@ -37,12 +41,77 @@ async def encrypted_credentials_payload(app, user_id: str) -> str:
         return record.encrypted_payload
 
 
+async def issue_agent_token(app, username: str) -> str:
+    async with app.state.session_factory() as session:
+        user = await session.scalar(select(User).where(User.username == username))
+        assert user is not None
+    issued = await app.state.auth_service.issue_for_user(user, kind="agent")
+    return issued.token
+
+
+async def mark_task_running(app, task_id: str) -> None:
+    async with app.state.session_factory() as session:
+        task = await session.get(Task, task_id)
+        assert task is not None
+        task.status = "running"
+        await session.commit()
+
+
 class SuccessfulModelVerifier:
     async def verify_asr(self, _: str) -> VerificationResult:
         return VerificationResult(True, "语音识别连接正常", 120.0)
 
     async def verify_llm(self, _: str) -> VerificationResult:
         return VerificationResult(True, "回答服务连接正常", 180.0)
+
+
+def test_agent_screenshot_is_accepted_and_saved_for_running_task(tmp_path) -> None:
+    app = create_app(cloud_settings(tmp_path))
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-horse-battery"},
+        ).json()
+        task = client.post(
+            "/api/v1/tasks",
+            headers=bearer(login["token"]),
+            json={"name": "截图测试", "mobile_required": False},
+        ).json()
+        assert client.portal is not None
+        client.portal.call(mark_task_running, app, task["id"])
+        agent_token = client.portal.call(issue_agent_token, app, "admin")
+
+        with client.websocket_connect(
+            "/ws/agent",
+            headers={"Authorization": f"Bearer {agent_token}"},
+        ) as socket:
+            socket.send_json(
+                {
+                    "type": "agent.hello",
+                    "device": {"device_key": "screenshot-test"},
+                }
+            )
+            assert socket.receive_json()["type"] == "agent.ready"
+            socket.send_json(
+                {
+                    "type": "screenshot.submit",
+                    "request_id": "request-1",
+                    "task_id": task["id"],
+                    "mime_type": "image/jpeg",
+                    "image_base64": base64.b64encode(b"fake-jpeg").decode("ascii"),
+                }
+            )
+            response = socket.receive_json()
+
+        assert response["type"] == "screenshot.result"
+        assert response["status"] == "accepted"
+        screenshots = list(
+            (tmp_path / "storage" / "tasks" / task["id"] / "screenshots").glob(
+                "*.jpg"
+            )
+        )
+        assert len(screenshots) == 1
+        assert screenshots[0].read_bytes() == b"fake-jpeg"
 
 
 def test_activation_registration_login_and_task_lifecycle(tmp_path) -> None:
@@ -115,6 +184,37 @@ def test_activation_registration_login_and_task_lifecycle(tmp_path) -> None:
         assert preflight.json()["ready"] is False
         assert preflight.json()["checks"][0]["key"] == "agent"
         assert preflight.json()["task"]["status"] == "check_failed"
+
+        audio_test = client.post(
+            f"/api/v1/tasks/{task_id}/audio-test/start", headers=bearer(token)
+        )
+        assert audio_test.status_code == 409
+
+        deleted = client.delete(f"/api/v1/tasks/{task_id}", headers=bearer(token))
+        assert deleted.status_code == 200
+        assert deleted.json()["deleted_at"] is not None
+        assert client.get("/api/v1/tasks", headers=bearer(token)).json() == []
+        assert client.get(
+            f"/api/v1/tasks/{task_id}/events", headers=bearer(token)
+        ).status_code == 404
+
+        admin_tasks = client.get(
+            "/api/v1/admin/tasks", headers=bearer(admin_token)
+        ).json()
+        assert admin_tasks[0]["deleted_at"] is not None
+        full_record = client.get(
+            f"/api/v1/admin/tasks/{task_id}/record", headers=bearer(admin_token)
+        )
+        assert full_record.status_code == 200
+        assert full_record.json()["task"]["deleted_at"] is not None
+        assert len(full_record.json()["events"]) >= 1
+        restored = client.post(
+            f"/api/v1/admin/tasks/{task_id}/restore", headers=bearer(admin_token)
+        )
+        assert restored.status_code == 200
+        assert [item["id"] for item in client.get(
+            "/api/v1/tasks", headers=bearer(token)
+        ).json()] == [task_id]
 
 
 def test_user_cannot_access_admin_api(tmp_path) -> None:
@@ -404,3 +504,51 @@ def test_preflight_requires_aec3_capable_agent(tmp_path) -> None:
         aec_check = next(check for check in accepted["checks"] if check["key"] == "aec3")
         assert aec_check["ok"] is True
         assert accepted["ready"] is True
+
+        client.portal.call(app.state.runtime_registry.release, task["id"])
+        sent_commands: list[dict[str, str]] = []
+
+        async def send_command(_: str, payload: dict[str, str]) -> None:
+            sent_commands.append(payload)
+
+        app.state.agent_hub.send = send_command
+        started = client.post(
+            f"/api/v1/tasks/{task['id']}/start",
+            headers=bearer(login["token"]),
+        )
+        assert started.status_code == 200
+        assert sent_commands == [{"type": "task.start", "task_id": task["id"]}]
+        restored_runtime = client.portal.call(app.state.runtime_registry.get, task["id"])
+        assert restored_runtime.configured is True
+
+        app.state.agent_hub.get = lambda _: SimpleNamespace(connected_at=0.0)
+        latest = client.get(
+            f"/api/v1/tasks/{task['id']}/preflight",
+            headers=bearer(login["token"]),
+        ).json()
+        assert latest["ready"] is True
+
+        app.state.agent_hub.get = lambda _: None
+        offline = client.get(
+            f"/api/v1/tasks/{task['id']}/preflight",
+            headers=bearer(login["token"]),
+        ).json()
+        assert offline["ready"] is False
+        assert offline["checks"] == [
+            {
+                "key": "agent",
+                "label": "桌面 Agent",
+                "ok": False,
+                "detail": "桌面 Agent 未连接",
+                "latency_ms": None,
+            }
+        ]
+
+        app.state.agent_hub.get = lambda _: SimpleNamespace(connected_at=10**12)
+        stale = client.get(
+            f"/api/v1/tasks/{task['id']}/preflight",
+            headers=bearer(login["token"]),
+        ).json()
+        assert stale["ready"] is False
+        assert stale["checks"][0]["ok"] is True
+        assert len(stale["checks"]) == 1

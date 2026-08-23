@@ -12,6 +12,7 @@ actor CaptureSession {
     private var systemAudio: SystemAudioCapture?
     private var microphone: MicrophoneCapture?
     private var aecSynchronizer: AEC3AudioSynchronizer?
+    private var signalMeter: TerminalSignalMeter?
 
     init(serverURL: URL, token: String, permissions: CapturePermissions) {
         self.serverURL = serverURL
@@ -47,10 +48,12 @@ actor CaptureSession {
             socket: candidateSocket,
             label: "AEC3 microphone"
         )
+        let signalMeter = TerminalSignalMeter()
         let synchronizer = AEC3AudioSynchronizer(
             processor: try AEC3NativeProcessor()
         ) { packet in
             candidatePump.submit(packet)
+            Task { await signalMeter.update(channel: .candidate, pcm: packet.pcm) }
         }
         let microphoneEncoder = PCMFrameEncoder { packet in
             synchronizer.submitCapture(packet)
@@ -58,12 +61,14 @@ actor CaptureSession {
         let systemEncoder = PCMFrameEncoder { packet in
             interviewerPump.submit(packet)
             synchronizer.submitRender(packet)
+            Task { await signalMeter.update(channel: .interviewer, pcm: packet.pcm) }
         }
         let microphone = MicrophoneCapture(encoder: microphoneEncoder)
         let systemAudio = SystemAudioCapture(encoder: systemEncoder)
 
         interviewerPump.start()
         candidatePump.start()
+        await signalMeter.start()
         do {
             try await interviewerSocket.connect()
             try await candidateSocket.connect()
@@ -73,10 +78,11 @@ actor CaptureSession {
             microphone.stop()
             await systemAudio.stop()
             synchronizer.flush()
-            await interviewerPump.stop()
-            await candidatePump.stop()
             await interviewerSocket.close()
             await candidateSocket.close()
+            await interviewerPump.stop()
+            await candidatePump.stop()
+            await signalMeter.stop()
             throw error
         }
 
@@ -87,22 +93,23 @@ actor CaptureSession {
         self.systemAudio = systemAudio
         self.microphone = microphone
         aecSynchronizer = synchronizer
+        self.signalMeter = signalMeter
         activeTaskID = taskID
-        CLIOutput.success("Dual-channel AEC3 capture started.")
-        CLIOutput.detail("Task: \(taskID)")
     }
 
     func stop() async {
         microphone?.stop()
         await systemAudio?.stop()
         aecSynchronizer?.flush()
-        await interviewerPump?.stop()
-        await candidatePump?.stop()
+        await signalMeter?.stop()
         await interviewerSocket?.close()
         await candidateSocket?.close()
+        await interviewerPump?.stop()
+        await candidatePump?.stop()
         microphone = nil
         systemAudio = nil
         aecSynchronizer = nil
+        signalMeter = nil
         interviewerPump = nil
         candidatePump = nil
         interviewerSocket = nil

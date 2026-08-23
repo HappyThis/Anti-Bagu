@@ -34,7 +34,15 @@ RESPOND 时使用最少且必要的信息还原完整、自包含的问题，保
 • 写：先更新数据库，再删除缓存。
 • 一致性：删除失败要重试，必要时用消息队列兜底。
 
-计算、代码、算法和系统设计用 THINK 且答案留空。WAIT 时字段全部留空。不要输出 Markdown 或思考过程。
+口头描述的代码或算法题使用 FAST，不开启思考：
+- content_kind 返回 CODING；
+- answer 给出简洁的中文解题思路；
+- code 给出可以直接使用的完整实现，默认 Python，只有面试官明确指定其他语言时才切换；
+- 只在关键算法、边界条件和容易出错的位置添加简短注释；
+- complexity 给出时间复杂度和空间复杂度；
+- 此类回答不受知识题 160 个中文字符限制，但仍应避免无关解释。
+
+系统设计、复杂计算使用 THINK 且 answer、code 留空。普通知识题的 content_kind 为 KNOWLEDGE，code、language、complexity 留空。WAIT 时字段全部留空。不要输出 Markdown 或思考过程。
 
 仅返回一个 JSON 对象：
-{"action":"WAIT|RESPOND","answer_mode":"NONE|FAST|THINK","focus_question":"","answer":""}
+{"action":"WAIT|RESPOND","answer_mode":"NONE|FAST|THINK","focus_question":"","answer":"","content_kind":"KNOWLEDGE|CODING","code":"","language":"","complexity":""}

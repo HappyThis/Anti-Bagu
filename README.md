@@ -58,6 +58,8 @@ swift run --package-path apps/capture-macos anti-bagu-agent login --server https
 swift run --package-path apps/capture-macos anti-bagu-agent start
 ```
 
+面试运行期间按 `Option + Space` 截取鼠标所在屏幕。截图题会独占当前 Focus，使用视觉思考模式生成解题思路和默认 Python 代码。
+
 不访问外部模型的测试：
 
 ```bash

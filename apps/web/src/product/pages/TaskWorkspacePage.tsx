@@ -1,16 +1,23 @@
 import {
   ArrowClockwise,
   Check,
+  CheckCircle,
   Desktop,
   DownloadSimple,
   Headphones,
+  Microphone,
   Play,
+  SpeakerHigh,
+  VideoCamera,
+  X,
 } from '@phosphor-icons/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import QRCode from 'react-qr-code'
 import { Navigate, useNavigate } from 'react-router-dom'
 
+import { apiRequest } from '../../shared/api'
+import { useAuth } from '../AuthContext'
 import { useProduct } from '../ProductContext'
 import type { PreflightCheck } from '../types'
 
@@ -25,8 +32,23 @@ const FAILURE_COPY: Record<string, string> = {
   mobile: '请先连接手机',
 }
 
+interface AudioTestLevel {
+  rms: number
+  peak: number
+  at: number
+}
+
+interface AudioTestStatus {
+  active: boolean
+  agent_connected: boolean
+  levels: Partial<Record<'interviewer' | 'candidate', AudioTestLevel>>
+}
+
+type AudioCheckPhase = 'intro' | 'starting' | 'system' | 'microphone' | 'verifying' | 'complete' | 'failed'
+
 export function TaskWorkspacePage() {
   const navigate = useNavigate()
+  const { session } = useAuth()
   const {
     tasks,
     loading,
@@ -48,9 +70,17 @@ export function TaskWorkspacePage() {
   const [draftName, setDraftName] = useState('')
   const [savingName, setSavingName] = useState(false)
   const [checks, setChecks] = useState<PreflightCheck[]>([])
+  const [preflightReady, setPreflightReady] = useState(false)
   const [pairingUrl, setPairingUrl] = useState('')
   const [phoneConnected, setPhoneConnected] = useState(false)
   const [error, setError] = useState('')
+  const [audioCheckOpen, setAudioCheckOpen] = useState(false)
+  const [audioCheckPhase, setAudioCheckPhase] = useState<AudioCheckPhase>('intro')
+  const [audioLevels, setAudioLevels] = useState<AudioTestStatus['levels']>({})
+  const [audioCheckError, setAudioCheckError] = useState('')
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const systemHits = useRef(0)
+  const microphoneHits = useRef(0)
 
   useEffect(() => {
     if (loading || task || creatingTaskRef.current) return
@@ -65,10 +95,39 @@ export function TaskWorkspacePage() {
 
   useEffect(() => {
     if (!taskId) return
-    getPreflight(taskId)
-      .then((result) => setChecks(result.checks))
-      .catch(() => setChecks([]))
+    let disposed = false
+    let timer: number | undefined
+    setChecks([])
+    setPreflightReady(false)
+    async function refreshPreflight() {
+      try {
+        const result = await getPreflight(taskId as string)
+        if (!disposed) {
+          setChecks(result.checks)
+          setPreflightReady(result.ready)
+        }
+      } catch {
+        if (!disposed) {
+          setChecks([])
+          setPreflightReady(false)
+        }
+      } finally {
+        if (!disposed) timer = window.setTimeout(refreshPreflight, 2_000)
+      }
+    }
+    void refreshPreflight()
+    return () => {
+      disposed = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
   }, [getPreflight, taskId])
+
+  useEffect(() => {
+    if (nameDialog && !preflightReady) {
+      setNameDialog(false)
+      setError('')
+    }
+  }, [nameDialog, preflightReady])
 
   useEffect(() => {
     if (!taskId || !nameDialog) return
@@ -92,23 +151,133 @@ export function TaskWorkspacePage() {
     }
   }, [getPairing, nameDialog, taskId])
 
+  useEffect(() => {
+    if (!taskId || !session || !audioCheckOpen || !['system', 'microphone'].includes(audioCheckPhase)) return
+    let disposed = false
+    let timer: number | undefined
+    async function pollLevels() {
+      try {
+        const result = await apiRequest<AudioTestStatus>(`/tasks/${taskId}/audio-test`, {}, session?.token)
+        if (disposed) return
+        setAudioLevels(result.levels)
+        if (!result.agent_connected) {
+          setAudioCheckError('电脑助手已断开，请重新打开后再检测。')
+          setAudioCheckPhase('failed')
+          return
+        }
+        const now = Date.now() / 1000
+        const system = result.levels.interviewer
+        const microphone = result.levels.candidate
+        if (audioCheckPhase === 'system') {
+          systemHits.current = system && now - system.at < 1.5 && system.rms >= 0.008 ? systemHits.current + 1 : 0
+          if (systemHits.current >= 3) {
+            videoRef.current?.pause()
+            setAudioCheckPhase('microphone')
+          }
+        } else {
+          microphoneHits.current = microphone && now - microphone.at < 1.5 && microphone.rms >= 0.008 ? microphoneHits.current + 1 : 0
+          if (microphoneHits.current >= 3) void finishAudioCheck()
+        }
+      } catch (requestError) {
+        if (!disposed) {
+          setAudioCheckError(requestError instanceof Error ? requestError.message : '无法读取声音检测结果')
+          setAudioCheckPhase('failed')
+        }
+      } finally {
+        if (!disposed) timer = window.setTimeout(pollLevels, 250)
+      }
+    }
+    void pollLevels()
+    return () => {
+      disposed = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [audioCheckOpen, audioCheckPhase, session, taskId])
+
   const checkMap = useMemo(
     () => new Map(checks.map((check) => [check.key, check])),
     [checks],
   )
 
-  async function confirmReadiness() {
+  async function refreshConnection() {
     if (!task) return
     setChecking(true)
-    setError('')
     try {
-      const result = await preflightTask(task.id)
+      const result = await getPreflight(task.id)
       setChecks(result.checks)
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : '暂时无法完成确认，请稍后重试')
+      setPreflightReady(result.ready)
     } finally {
       setChecking(false)
     }
+  }
+
+  function openAudioCheck() {
+    setAudioCheckOpen(true)
+    setAudioCheckPhase('intro')
+    setAudioCheckError('')
+    setAudioLevels({})
+    systemHits.current = 0
+    microphoneHits.current = 0
+  }
+
+  async function startAudioCheck() {
+    if (!task || !session) return
+    setAudioCheckPhase('starting')
+    setAudioCheckError('')
+    setAudioLevels({})
+    systemHits.current = 0
+    microphoneHits.current = 0
+    try {
+      await apiRequest(`/tasks/${task.id}/audio-test/start`, { method: 'POST' }, session.token)
+      setAudioCheckPhase('system')
+    } catch (requestError) {
+      setAudioCheckError(requestError instanceof Error ? requestError.message : '无法启动声音检测')
+      setAudioCheckPhase('failed')
+    }
+  }
+
+  async function playTestVideo() {
+    const video = videoRef.current
+    if (!video) return
+    video.currentTime = 0
+    try {
+      await video.play()
+    } catch {
+      setAudioCheckError('浏览器没有允许播放声音，请再次点击播放。')
+    }
+  }
+
+  async function finishAudioCheck() {
+    if (!task || !session || audioCheckPhase === 'verifying') return
+    setAudioCheckPhase('verifying')
+    try {
+      await apiRequest(`/tasks/${task.id}/audio-test/stop`, { method: 'POST' }, session.token)
+      const result = await preflightTask(task.id)
+      setChecks(result.checks)
+      setPreflightReady(result.ready)
+      if (result.ready) {
+        setAudioCheckPhase('complete')
+      } else {
+        const failure = result.checks.find((check) => !check.ok)
+        setAudioCheckError(failure?.detail ?? '还有一项服务没有准备好')
+        setAudioCheckPhase('failed')
+      }
+    } catch (requestError) {
+      setAudioCheckError(requestError instanceof Error ? requestError.message : '服务检查失败')
+      setAudioCheckPhase('failed')
+    }
+  }
+
+  async function closeAudioCheck() {
+    videoRef.current?.pause()
+    if (task && session && audioCheckPhase !== 'complete') {
+      try {
+        await apiRequest(`/tasks/${task.id}/audio-test/stop`, { method: 'POST' }, session.token)
+      } catch {
+        // Closing the dialog remains safe when the agent is already offline.
+      }
+    }
+    setAudioCheckOpen(false)
   }
 
   async function confirmName() {
@@ -132,10 +301,10 @@ export function TaskWorkspacePage() {
   if (!task) return <div className="route-loading">{error || '正在准备面试…'}</div>
   const activeTask = task
   if (activeTask.status === 'running') return <Navigate to={`/tasks/${activeTask.id}/live`} replace />
-  const ready = activeTask.status === 'ready'
   const computerReady = checkMap.get('agent')?.ok === true
   const soundKeys = ['system_audio', 'microphone', 'aec3', 'asr', 'llm']
   const soundReady = soundKeys.every((key) => checkMap.get(key)?.ok === true)
+  const ready = preflightReady && computerReady && soundReady
   const currentStep = ready ? 3 : computerReady ? 2 : 1
   const firstProblem = checks.find((check) => !check.ok)
 
@@ -144,8 +313,8 @@ export function TaskWorkspacePage() {
       <div className="prep-steps" aria-label="面试准备步骤">
         <PreparationStep number={1} title="打开电脑助手" description="下载并打开后会自动连接，无需了解复杂设置。" icon={<Desktop size={34} />} active={currentStep === 1} complete={computerReady} />
 
-        <PreparationStep number={2} title="确认可以听清" description="确认面试声音、你的声音和回答功能都能正常使用。" icon={<Headphones size={34} />} active={currentStep === 2} complete={soundReady} locked={!computerReady}>
-          {computerReady && !ready ? <button className="primary-action prep-confirm" type="button" onClick={() => void confirmReadiness()} disabled={checking}>{checking ? <><ArrowClockwise className="spin" size={19} />正在确认…</> : '开始确认'}</button> : null}
+        <PreparationStep number={2} title="检查声音与回答" description="播放测试视频，再说一句话，确认两路声音和回答服务正常。" icon={<Headphones size={34} />} active={currentStep === 2} complete={soundReady} locked={!computerReady}>
+          {computerReady && !ready ? <button className="primary-action prep-confirm" type="button" onClick={openAudioCheck}>开始检测</button> : null}
         </PreparationStep>
 
         <PreparationStep number={3} title="开始面试" description="一切准备好后，由你亲自点击开始。" icon={<Play size={34} weight="fill" />} active={currentStep === 3} complete={false} locked={!ready}>
@@ -155,15 +324,78 @@ export function TaskWorkspacePage() {
 
       {!computerReady ? <section className="helper-not-connected" aria-label="电脑助手未连接">
         <div><strong>电脑助手未连接</strong><span>可能尚未安装，或者安装后没有打开。</span><small>如果 macOS 提示“无法验证”，请前往“系统设置 → 隐私与安全性”，点击“仍要打开”。</small></div>
-        <div className="helper-not-connected-actions"><a className="primary-action" href="/downloads/anti-bagu-agent-macos-arm64.tar.gz" download><DownloadSimple size={18} />尚未安装，立即下载</a><button className="secondary-action" type="button" onClick={() => void confirmReadiness()} disabled={checking}><ArrowClockwise className={checking ? 'spin' : ''} size={18} />{checking ? '正在连接…' : '已经安装，重新连接'}</button></div>
+        <div className="helper-not-connected-actions"><a className="primary-action" href="/downloads/anti-bagu-agent-macos-arm64.tar.gz" download><DownloadSimple size={18} />尚未安装，立即下载</a><button className="secondary-action" type="button" onClick={() => void refreshConnection()} disabled={checking}><ArrowClockwise className={checking ? 'spin' : ''} size={18} />{checking ? '正在连接…' : '已经安装，重新连接'}</button></div>
       </section> : null}
 
       {firstProblem && firstProblem.key !== 'agent' ? <div className="prep-guidance" role="status"><span>{FAILURE_COPY[firstProblem.key] ?? '还有一项没有准备好'}</span><small>按当前步骤完成后，再点击确认。</small></div> : null}
       {error && !nameDialog ? <div className="form-error prep-error" role="alert">{error}</div> : null}
 
       {nameDialog ? <InterviewNameDialog name={draftName} pairingUrl={pairingUrl} phoneConnected={phoneConnected} saving={savingName} error={error} onChange={setDraftName} onCancel={() => { setNameDialog(false); setError('') }} onConfirm={() => void confirmName()} /> : null}
+      {audioCheckOpen ? <AudioCheckDialog phase={audioCheckPhase} levels={audioLevels} error={audioCheckError} videoRef={videoRef} onStart={() => void startAudioCheck()} onPlay={() => void playTestVideo()} onClose={() => void closeAudioCheck()} /> : null}
     </section>
   )
+}
+
+function AudioCheckDialog({
+  phase,
+  levels,
+  error,
+  videoRef,
+  onStart,
+  onPlay,
+  onClose,
+}: {
+  phase: AudioCheckPhase
+  levels: AudioTestStatus['levels']
+  error: string
+  videoRef: RefObject<HTMLVideoElement | null>
+  onStart: () => void
+  onPlay: () => void
+  onClose: () => void
+}) {
+  const systemPassed = ['microphone', 'verifying', 'complete'].includes(phase)
+  const microphonePassed = ['verifying', 'complete'].includes(phase)
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section className="audio-check-dialog" role="dialog" aria-modal="true" aria-labelledby="audio-check-title">
+        <button className="dialog-close" type="button" aria-label="关闭声音检测" onClick={onClose}><X size={20} /></button>
+        <span className="eyebrow">声音与回答检查</span>
+        <h2 id="audio-check-title">确认电脑真的听得见</h2>
+        <p>先检测页面播放的面试声音，再检测你对着麦克风说话。</p>
+        <div className="audio-check-grid">
+          <div className={`audio-check-stage ${phase === 'system' ? 'audio-check-stage--active' : ''} ${systemPassed ? 'audio-check-stage--passed' : ''}`}>
+            <header><span><SpeakerHigh size={20} />面试声音</span>{systemPassed ? <CheckCircle size={19} weight="fill" /> : null}</header>
+            <div className="audio-test-video">
+              <video ref={videoRef} src="/media/audio-check.mp4" playsInline onEnded={() => undefined} />
+              <span><VideoCamera size={24} />Anti-Bagu Audio Check</span>
+            </div>
+            <AudioLevelBar label="系统音频信号" level={levels.interviewer} passed={systemPassed} />
+            {phase === 'system' ? <button className="secondary-action compact-action" type="button" onClick={onPlay}><Play size={17} weight="fill" />播放测试视频</button> : null}
+          </div>
+          <div className={`audio-check-stage ${phase === 'microphone' ? 'audio-check-stage--active' : ''} ${microphonePassed ? 'audio-check-stage--passed' : ''}`}>
+            <header><span><Microphone size={20} />我的声音</span>{microphonePassed ? <CheckCircle size={19} weight="fill" /> : null}</header>
+            <div className="microphone-prompt"><Microphone size={30} weight="duotone" /><strong>{phase === 'microphone' ? '请说一句话' : '等待麦克风检测'}</strong><span>例如：“这是一次声音测试”</span></div>
+            <AudioLevelBar label="麦克风信号" level={levels.candidate} passed={microphonePassed} />
+          </div>
+        </div>
+        {phase === 'intro' ? <div className="audio-check-callout">检测期间不会把声音发送给 ASR，也不会生成面试记录。</div> : null}
+        {phase === 'starting' || phase === 'verifying' ? <div className="audio-check-progress"><ArrowClockwise className="spin" size={18} />{phase === 'starting' ? '正在启动双路声音检测…' : '声音正常，正在检查 AEC3、问题识别和回答服务…'}</div> : null}
+        {phase === 'complete' ? <div className="inline-success"><CheckCircle size={19} weight="fill" />声音与回答功能均已准备好。</div> : null}
+        {error ? <div className="form-error" role="alert">{error}</div> : null}
+        <div className="dialog-actions">
+          {phase === 'failed' && error.includes('版本过旧') ? <a className="secondary-action" href="/downloads/anti-bagu-agent-macos-arm64.tar.gz" download><DownloadSimple size={17} />下载最新版</a> : null}
+          <button className="secondary-action" type="button" onClick={onClose}>{phase === 'complete' ? '完成' : '取消'}</button>
+          {phase === 'intro' || phase === 'failed' ? <button className="primary-action" type="button" onClick={onStart}>{phase === 'failed' ? '重新检测' : '启动检测'}</button> : null}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function AudioLevelBar({ label, level, passed }: { label: string; level?: AudioTestLevel; passed: boolean }) {
+  const strength = Math.min(100, Math.max(2, (level?.rms ?? 0) * 700))
+  const hot = (level?.peak ?? 0) >= 0.95
+  return <div className="audio-check-level"><div><span>{label}</span><em>{passed ? '已通过' : `${Math.round(strength)}%`}</em></div><i><b className={hot ? 'audio-check-level--hot' : ''} style={{ width: `${strength}%` }} /></i></div>
 }
 
 function InterviewNameDialog({

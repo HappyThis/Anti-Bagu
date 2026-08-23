@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from anti_bagu.api.dependencies import Principal, current_admin, get_auth_service, get_db
 from anti_bagu.api.schemas import ActivationKeyCreateRequest, ActivationKeyView
 from anti_bagu.auth.service import AuthService
-from anti_bagu.persistence.models import ActivationKey, PlatformAudit, Task, User
+from anti_bagu.persistence.models import ActivationKey, PlatformAudit, Task, TaskEvent, User
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -184,9 +184,73 @@ async def tasks(
             "status": task.status,
             "updated_at": task.updated_at,
             "created_at": task.created_at,
+            "deleted_at": task.deleted_at,
+            "deleted_by_id": task.deleted_by_id,
         }
         for task, username in rows
     ]
+
+
+@router.post("/tasks/{task_id}/restore")
+async def restore_task(
+    task_id: str,
+    principal: Principal = Depends(current_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    task = await session.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="面试记录不存在")
+    task.deleted_at = None
+    task.deleted_by_id = None
+    session.add(
+        PlatformAudit(
+            actor_user_id=principal.user.id,
+            action="task.restored",
+            target_type="task",
+            target_id=task.id,
+        )
+    )
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/tasks/{task_id}/record")
+async def task_record(
+    task_id: str,
+    _: Principal = Depends(current_admin),
+    session: AsyncSession = Depends(get_db),
+):
+    task = await session.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="面试记录不存在")
+    events = (
+        await session.scalars(
+            select(TaskEvent)
+            .where(TaskEvent.task_id == task_id)
+            .order_by(TaskEvent.created_at.asc(), TaskEvent.id.asc())
+            .limit(5_000)
+        )
+    ).all()
+    return {
+        "task": {
+            "id": task.id,
+            "name": task.name,
+            "status": task.status,
+            "created_at": task.created_at,
+            "started_at": task.started_at,
+            "ended_at": task.ended_at,
+            "deleted_at": task.deleted_at,
+        },
+        "events": [
+            {
+                "id": event.id,
+                "type": event.event_type,
+                "created_at": event.created_at,
+                "payload": event.payload,
+            }
+            for event in events
+        ],
+    }
 
 
 @router.get("/system")

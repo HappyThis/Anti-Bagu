@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import QRCode from 'react-qr-code'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
-import { AnswerWorkspace } from '../../features/answer/AnswerWorkspace'
+import { AnswerCardCarousel } from '../../features/answer/AnswerCardCarousel'
 import { DiagnosticsBar } from '../../features/diagnostics/DiagnosticsBar'
 import { useRealtimeSession } from '../../features/session/useRealtimeSession'
 import { TranscriptPanel } from '../../features/transcript/TranscriptPanel'
@@ -110,14 +110,7 @@ export function LiveTaskPage() {
         />
       </div>
 
-      <AnswerWorkspace
-        focus={state.focus}
-        answer={state.answer}
-        mode={state.answerMode}
-        generating={state.generating}
-        error={state.error}
-        onClear={clear}
-      />
+      <AnswerCardCarousel cards={state.answerCards} onClear={clear} />
       <DiagnosticsBar latency={state.latency} />
       {showPhone ? <PhonePairingDialog pairingUrl={pairingUrl} connected={phoneConnected} onClose={() => setShowPhone(false)} /> : null}
     </div>

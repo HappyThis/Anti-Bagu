@@ -5,8 +5,10 @@ import asyncio
 import pytest
 from fakes.models import (
     BlockingFocusResponder,
+    BlockingScreenshotAnalyzer,
     BlockingThinkingAnswerer,
     FakeFocusResponder,
+    FakeScreenshotAnalyzer,
     FakeThinkingAnswerer,
     PreemptibleFocusResponder,
     SequencedFocusResponder,
@@ -18,8 +20,11 @@ from anti_bagu.interview.events import (
     AnswerMode,
     AnswerStatus,
     Channel,
+    ContentKind,
     FocusAction,
     FocusResult,
+    FocusSource,
+    ScreenshotFocusResult,
     TranscriptEvent,
     TranscriptPhase,
 )
@@ -45,12 +50,17 @@ def coordinator(
     responder,
     *,
     thinking=None,
+    screenshot=None,
     sink=None,
     debounce_seconds: float = 0,
 ) -> InterviewCoordinator:
     return InterviewCoordinator(
         responder,
         thinking or FakeThinkingAnswerer(),
+        screenshot
+        or FakeScreenshotAnalyzer(
+            ScreenshotFocusResult(action=FocusAction.WAIT)
+        ),
         sink or MemoryEventSink(),
         FocusPromptBuilder(system_prompt="I 是面试官，C 是候选人。返回 JSON。"),
         debounce_seconds=debounce_seconds,
@@ -311,3 +321,99 @@ async def test_new_committed_focus_cancels_old_thinking_answer() -> None:
     assert first_focus.answer_status is AnswerStatus.INTERRUPTED
     assert first_focus.recommended_answer == "已经显示的部分。"
     assert subject.store.current_focus == "MySQL 中如何定位慢查询？"
+
+
+@pytest.mark.asyncio
+async def test_screenshot_focus_is_exclusive_and_defers_voice_focus() -> None:
+    screenshot = BlockingScreenshotAnalyzer(
+        ScreenshotFocusResult(
+            action=FocusAction.RESPOND,
+            focus_question="实现两数之和",
+            answer="使用哈希表保存已经遍历的数字。",
+            content_kind=ContentKind.CODING,
+            code="def two_sum(nums, target):\n    return []",
+            language="python",
+            complexity="时间 O(n)，空间 O(n)",
+        )
+    )
+    responder = FakeFocusResponder(fast_result("Redis 为什么快？"))
+    sink = MemoryEventSink()
+    subject = coordinator(
+        responder,
+        screenshot=screenshot,
+        sink=sink,
+        debounce_seconds=0.01,
+    )
+
+    accepted = await subject.handle_screenshot(
+        screenshot_id="screen-1",
+        image_data=b"fake-jpeg",
+        mime_type="image/jpeg",
+        storage_path="tasks/task-1/screenshots/screen-1.jpg",
+    )
+    await screenshot.started.wait()
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "Redis 为什么快？",
+            utterance_id="interviewer-after-screen",
+        )
+    )
+    second_accepted = await subject.handle_screenshot(
+        screenshot_id="screen-2",
+        image_data=b"second",
+        mime_type="image/jpeg",
+        storage_path="tasks/task-1/screenshots/screen-2.jpg",
+    )
+    await asyncio.sleep(0.03)
+
+    assert accepted
+    assert not second_accepted
+    assert subject.screenshot_focus_active
+    assert not screenshot.cancelled
+    assert responder.calls == []
+
+    screenshot.release.set()
+    await subject.wait_idle()
+
+    screenshot_focus = subject.store.focuses[0]
+    assert screenshot_focus.source is FocusSource.SCREENSHOT
+    assert screenshot_focus.code.startswith("def two_sum")
+    assert len(responder.calls) == 1
+    assert "Redis 为什么快？" in responder.calls[0]["prompt"]
+    assert not subject.screenshot_focus_active
+    assert any(event.type == "focus.deferred" for event in sink.events)
+
+
+@pytest.mark.asyncio
+async def test_screenshot_focus_emits_structured_answer() -> None:
+    screenshot = FakeScreenshotAnalyzer(
+        ScreenshotFocusResult(
+            action=FocusAction.RESPOND,
+            focus_question="反转链表",
+            answer="使用三个指针迭代反转。",
+            content_kind=ContentKind.CODING,
+            code="def reverse_list(head):\n    return head",
+            language="python",
+            complexity="时间 O(n)，空间 O(1)",
+        )
+    )
+    sink = MemoryEventSink()
+    subject = coordinator(
+        FakeFocusResponder(wait_result()), screenshot=screenshot, sink=sink
+    )
+
+    await subject.handle_screenshot(
+        screenshot_id="screen-structured",
+        image_data=b"fake-image",
+        mime_type="image/png",
+        storage_path="tasks/task-1/screenshots/screen-structured.png",
+    )
+    await subject.wait_idle()
+
+    completed = next(event for event in sink.events if event.type == "answer.completed")
+    assert completed.payload["content_kind"] == "CODING"
+    assert completed.payload["language"] == "python"
+    assert completed.payload["code"].startswith("def reverse_list")
+    assert completed.payload["source"] == "SCREENSHOT"

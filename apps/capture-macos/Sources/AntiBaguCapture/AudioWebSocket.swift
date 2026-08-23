@@ -8,6 +8,8 @@ actor AudioWebSocket {
     private var task: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var intentionallyClosed = false
+    private var reconnectDelay: TimeInterval = 0.5
+    private var reconnectAfter = Date.distantPast
 
     init(
         endpoint: URL,
@@ -23,7 +25,8 @@ actor AudioWebSocket {
 
     func connect() async throws {
         guard task == nil else { return }
-        intentionallyClosed = false
+        guard !intentionallyClosed else { throw AudioTransportError.closed }
+        guard Date() >= reconnectAfter else { throw AudioTransportError.reconnecting }
         var request = URLRequest(url: endpoint)
         if let authorizationToken {
             request.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
@@ -34,31 +37,34 @@ actor AudioWebSocket {
         guard let message = String(data: encoded, encoding: .utf8) else {
             throw AudioTransportError.invalidMetadata
         }
-        try await socket.send(.string(message))
+        do {
+            try await socket.send(.string(message))
+        } catch {
+            socket.cancel(with: .goingAway, reason: nil)
+            reconnectAfter = Date().addingTimeInterval(reconnectDelay)
+            reconnectDelay = min(5, reconnectDelay * 2)
+            throw error
+        }
         task = socket
+        reconnectDelay = 0.5
+        reconnectAfter = .distantPast
         startReceiving(from: socket)
     }
 
     func send(frame: Data) async throws {
-        var lastError: Error = AudioTransportError.notConnected
-        for attempt in 1 ... 3 {
-            do {
-                if task == nil {
-                    try await connect()
-                }
-                guard let task else { throw AudioTransportError.notConnected }
-                try await task.send(.data(frame))
-                return
-            } catch {
-                lastError = error
-                task?.cancel(with: .goingAway, reason: nil)
-                task = nil
-                if attempt < 3 {
-                    try? await Task.sleep(for: .milliseconds(200 * attempt))
-                }
-            }
+        guard !Task.isCancelled else { throw CancellationError() }
+        guard !intentionallyClosed else { throw AudioTransportError.closed }
+        if task == nil {
+            try await connect()
         }
-        throw lastError
+        guard let task else { throw AudioTransportError.notConnected }
+        do {
+            try await task.send(.data(frame))
+            reconnectDelay = 0.5
+        } catch {
+            scheduleReconnect(socket: task)
+            throw error
+        }
     }
 
     func send(packet: AudioFramePacket) async throws {
@@ -71,6 +77,7 @@ actor AudioWebSocket {
         receiveTask = nil
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
+        reconnectAfter = .distantFuture
     }
 
     private func startReceiving(from socket: URLSessionWebSocketTask) {
@@ -91,14 +98,24 @@ actor AudioWebSocket {
         error: Error
     ) {
         guard task === socket else { return }
-        task = nil
+        scheduleReconnect(socket: socket)
         if !intentionallyClosed {
-            CLIOutput.warning("Audio channel disconnected; the next frame will retry. \(error)")
+            CLIOutput.warning("Audio channel disconnected; retrying with backoff. \(error)")
         }
+    }
+
+    private func scheduleReconnect(socket: URLSessionWebSocketTask) {
+        guard task === socket else { return }
+        socket.cancel(with: .goingAway, reason: nil)
+        task = nil
+        reconnectAfter = Date().addingTimeInterval(reconnectDelay)
+        reconnectDelay = min(5, reconnectDelay * 2)
     }
 }
 
 enum AudioTransportError: Error {
     case invalidMetadata
     case notConnected
+    case reconnecting
+    case closed
 }

@@ -35,7 +35,11 @@ async def task_audio(
     if channel not in {"interviewer", "candidate"}:
         raise HTTPException(status_code=404, detail="音频通道不存在")
     task = await session.get(Task, task_id)
-    if task is None or (principal.user.role != "admin" and task.owner_id != principal.user.id):
+    if (
+        task is None
+        or (task.deleted_at is not None and principal.user.role != "admin")
+        or (principal.user.role != "admin" and task.owner_id != principal.user.id)
+    ):
         raise HTTPException(status_code=404, detail="任务不存在")
     path = request.app.state.settings.storage_dir / "tasks" / task_id / "audio" / f"{channel}.pcm"
     if not path.exists():
@@ -68,6 +72,7 @@ async def reviews(
             select(Task)
             .where(Task.owner_id == principal.user.id)
             .where(Task.status == "completed")
+            .where(Task.deleted_at.is_(None))
             .order_by(desc(Task.ended_at))
         )
     ).all()

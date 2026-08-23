@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
 import time
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -12,7 +15,7 @@ from anti_bagu.asr.qwen_streaming import QwenStreamingASRSession
 from anti_bagu.audio.protocol import AudioFramePacket, AudioMetadata, pcm_level
 from anti_bagu.interview.events import Channel, RealtimeEvent
 from anti_bagu.persistence.audio_archive import PCMArchive
-from anti_bagu.persistence.models import AgentDevice, Task, User
+from anti_bagu.persistence.models import AgentDevice, Task, TaskEvent, User
 
 LOGGER = logging.getLogger(__name__)
 router = APIRouter(tags=["realtime"])
@@ -48,6 +51,9 @@ async def agent_control(websocket: WebSocket) -> None:
         )
         while True:
             payload = await websocket.receive_json()
+            if payload.get("type") == "screenshot.submit":
+                await _handle_agent_screenshot(websocket, user, payload)
+                continue
             websocket.app.state.agent_hub.handle_message(user.id, payload)
             if payload.get("type") == "agent.heartbeat":
                 await websocket.send_json({"type": "agent.heartbeat.ack", "at": time.time()})
@@ -77,6 +83,7 @@ async def task_ui(websocket: WebSocket, task_id: str) -> None:
             payload={"status": task.status},
         ).model_dump(mode="json")
     )
+    await _send_answer_history(websocket, task_id)
     receive_task: asyncio.Task[dict[str, object]] | None = None
     try:
         async with runtime.event_hub.subscribe() as queue:
@@ -122,6 +129,7 @@ async def mobile_answers(websocket: WebSocket, pairing_token: str) -> None:
             "expires_at": pairing.expires_at,
         }
     )
+    await _send_answer_history(websocket, pairing.task_id)
     try:
         async with runtime.event_hub.subscribe() as queue:
             while True:
@@ -149,6 +157,9 @@ async def task_audio(websocket: WebSocket, task_id: str, channel: Channel) -> No
     task = await _authorized_task(websocket, task_id, user)
     if task is None:
         await websocket.close(code=4403, reason="task access denied")
+        return
+    if task.status != "running":
+        await websocket.close(code=4410, reason="task is not running")
         return
     runtime = await websocket.app.state.runtime_registry.get(task_id)
     await websocket.accept()
@@ -248,6 +259,110 @@ async def _stream_audio(websocket: WebSocket, channel: Channel, runtime) -> None
         )
 
 
+async def _handle_agent_screenshot(
+    websocket: WebSocket,
+    user: User,
+    payload: dict[str, object],
+) -> None:
+    request_id = str(payload.get("request_id") or uuid.uuid4())
+    task_id = str(payload.get("task_id") or "")
+
+    async def reply(status: str, message: str = "") -> None:
+        await websocket.send_json(
+            {
+                "type": "screenshot.result",
+                "request_id": request_id,
+                "task_id": task_id,
+                "status": status,
+                "message": message,
+            }
+        )
+
+    task = await _authorized_task(websocket, task_id, user)
+    if task is None or task.status != "running":
+        await reply("rejected", "No running interview is available for screenshots.")
+        return
+
+    runtime = await websocket.app.state.runtime_registry.get(task_id)
+    if runtime.coordinator.screenshot_focus_active:
+        await reply("busy", "The previous screenshot is still being analyzed.")
+        return
+
+    mime_type = str(payload.get("mime_type") or "image/jpeg").lower()
+    extensions = {"image/jpeg": "jpg", "image/png": "png"}
+    extension = extensions.get(mime_type)
+    if extension is None:
+        await reply("rejected", "Only JPEG and PNG screenshots are supported.")
+        return
+
+    encoded = payload.get("image_base64")
+    if not isinstance(encoded, str) or not encoded:
+        await reply("rejected", "The screenshot payload is empty.")
+        return
+    if len(encoded) > 12_000_000:
+        await reply("rejected", "The screenshot is too large.")
+        return
+    try:
+        image_data = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        await reply("rejected", "The screenshot payload is invalid.")
+        return
+    if not image_data or len(image_data) > 8_000_000:
+        await reply("rejected", "The screenshot is too large.")
+        return
+
+    screenshot_id = str(uuid.uuid4())
+    relative_path = f"tasks/{task_id}/screenshots/{screenshot_id}.{extension}"
+    absolute_path = websocket.app.state.settings.storage_dir / relative_path
+
+    def persist() -> None:
+        absolute_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = absolute_path.with_suffix(f".{extension}.tmp")
+        temporary.write_bytes(image_data)
+        temporary.replace(absolute_path)
+
+    await asyncio.to_thread(persist)
+    accepted = await runtime.coordinator.handle_screenshot(
+        screenshot_id=screenshot_id,
+        image_data=image_data,
+        mime_type=mime_type,
+        storage_path=relative_path,
+    )
+    if not accepted:
+        await asyncio.to_thread(absolute_path.unlink, True)
+        await reply("busy", "The previous screenshot is still being analyzed.")
+        return
+    await reply("accepted", "Screenshot captured. Analysis has started.")
+
+
+async def _send_answer_history(websocket: WebSocket, task_id: str) -> None:
+    async with websocket.app.state.session_factory() as session:
+        rows = (
+            await session.scalars(
+                select(TaskEvent)
+                .where(TaskEvent.task_id == task_id)
+                .where(
+                    TaskEvent.event_type.in_(
+                        ("focus.updated", "answer.completed", "answer.cancelled")
+                    )
+                )
+                .order_by(TaskEvent.created_at.asc(), TaskEvent.id.asc())
+                .limit(500)
+            )
+        ).all()
+    for row in rows:
+        await websocket.send_json(
+            RealtimeEvent(
+                type=row.event_type,
+                event_id=row.event_id,
+                session_id=task_id,
+                conversation_revision=row.conversation_revision,
+                created_at=row.created_at.timestamp(),
+                payload=row.payload,
+            ).model_dump(mode="json")
+        )
+
+
 def _websocket_token(websocket: WebSocket) -> str | None:
     value = websocket.headers.get("authorization")
     if value:
@@ -263,6 +378,8 @@ async def _authorized_task(websocket: WebSocket, task_id: str, user: User | None
     async with websocket.app.state.session_factory() as session:
         task = await session.get(Task, task_id)
         if task is None:
+            return None
+        if task.deleted_at is not None and user.role != "admin":
             return None
         if user.role != "admin" and task.owner_id != user.id:
             return None

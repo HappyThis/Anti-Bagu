@@ -36,7 +36,9 @@ class User(Base):
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
 
-    tasks: Mapped[list[Task]] = relationship(back_populates="owner")
+    tasks: Mapped[list[Task]] = relationship(
+        back_populates="owner", foreign_keys="Task.owner_id"
+    )
 
 
 class ActivationKey(Base):
@@ -104,8 +106,10 @@ class Task(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
 
-    owner: Mapped[User] = relationship(back_populates="tasks")
+    owner: Mapped[User] = relationship(back_populates="tasks", foreign_keys=[owner_id])
     events: Mapped[list[TaskEvent]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
     )

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-from anti_bagu.interview.events import FocusResult
+from anti_bagu.interview.events import FocusResult, ScreenshotFocusResult
 
 
 class FakeFocusResponder:
@@ -94,3 +94,31 @@ class BlockingThinkingAnswerer(FakeThinkingAnswerer):
             self.cancelled = True
             raise
         yield "后续内容。"
+
+
+class FakeScreenshotAnalyzer:
+    def __init__(self, result: ScreenshotFocusResult) -> None:
+        self.result = result
+        self.calls: list[dict[str, object]] = []
+
+    async def analyze(self, **kwargs) -> ScreenshotFocusResult:
+        self.calls.append(kwargs)
+        return self.result
+
+
+class BlockingScreenshotAnalyzer(FakeScreenshotAnalyzer):
+    def __init__(self, result: ScreenshotFocusResult) -> None:
+        super().__init__(result)
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.cancelled = False
+
+    async def analyze(self, **kwargs) -> ScreenshotFocusResult:
+        self.calls.append(kwargs)
+        self.started.set()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        return self.result

@@ -7,6 +7,7 @@ export interface InterviewTask {
   status: TaskStatus
   mode: 'interview' | 'practice'
   mobileRequired: boolean
+  deletedAt: string | null
 }
 
 export interface PreflightCheck {

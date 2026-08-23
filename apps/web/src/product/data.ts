@@ -13,6 +13,7 @@ export const INITIAL_TASKS: InterviewTask[] = [
     status: 'ready',
     mode: 'interview',
     mobileRequired: true,
+    deletedAt: null,
   },
   {
     id: 'java-senior-round-one',
@@ -21,6 +22,7 @@ export const INITIAL_TASKS: InterviewTask[] = [
     status: 'completed',
     mode: 'interview',
     mobileRequired: true,
+    deletedAt: null,
   },
   {
     id: 'payment-architecture',
@@ -29,6 +31,7 @@ export const INITIAL_TASKS: InterviewTask[] = [
     status: 'completed',
     mode: 'interview',
     mobileRequired: true,
+    deletedAt: null,
   },
   {
     id: 'redis-practice',
@@ -37,6 +40,7 @@ export const INITIAL_TASKS: InterviewTask[] = [
     status: 'completed',
     mode: 'practice',
     mobileRequired: false,
+    deletedAt: null,
   },
 ]
 

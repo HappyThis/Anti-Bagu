@@ -2,7 +2,12 @@ import pytest
 from pydantic import ValidationError
 
 from anti_bagu.audio.protocol import AudioFramePacket, AudioMetadata, pcm_level
-from anti_bagu.interview.events import AnswerMode, FocusAction, FocusResult
+from anti_bagu.interview.events import (
+    AnswerMode,
+    ContentKind,
+    FocusAction,
+    FocusResult,
+)
 
 
 def test_audio_metadata_accepts_v1_pcm_format() -> None:
@@ -29,4 +34,26 @@ def test_wait_protocol_rejects_answer() -> None:
             action=FocusAction.WAIT,
             answer_mode=AnswerMode.NONE,
             answer="不应出现",
+        )
+
+
+def test_fast_coding_result_requires_code_and_defaults_to_python() -> None:
+    result = FocusResult(
+        action=FocusAction.RESPOND,
+        answer_mode=AnswerMode.FAST,
+        focus_question="实现两数之和",
+        answer="使用哈希表。",
+        content_kind=ContentKind.CODING,
+        code="def two_sum(nums, target): return []",
+    )
+
+    assert result.language == "python"
+
+    with pytest.raises(ValidationError):
+        FocusResult(
+            action=FocusAction.RESPOND,
+            answer_mode=AnswerMode.FAST,
+            focus_question="实现两数之和",
+            answer="使用哈希表。",
+            content_kind=ContentKind.CODING,
         )

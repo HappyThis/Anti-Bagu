@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from anti_bagu.agent.hub import AgentHub
 from anti_bagu.api.app import create_app
 from anti_bagu.api.event_hub import EventHub
 from anti_bagu.config import Settings
@@ -50,6 +51,29 @@ def test_debug_events_returns_recent_redacted_audit_records(tmp_path) -> None:
         "transcript.committed",
     ]
     assert body["events"][0]["payload"]["text"]["redacted"] is True
+
+
+def test_agent_hub_tracks_temporary_audio_test_levels() -> None:
+    hub = AgentHub()
+    hub.start_audio_test("user", "task")
+    hub.handle_message(
+        "user",
+        {
+            "type": "preflight.audio.level",
+            "task_id": "task",
+            "channel": "candidate",
+            "rms": 0.12,
+            "peak": 0.45,
+        },
+    )
+
+    state = hub.audio_test_state("user", "task")
+    assert state["active"] is True
+    assert state["levels"]["candidate"]["rms"] == 0.12
+    assert state["levels"]["candidate"]["peak"] == 0.45
+
+    hub.stop_audio_test("user", "task")
+    assert hub.audio_test_state("user", "task")["active"] is False
 
 
 async def test_event_hub_replays_latest_audio_and_latency_state() -> None:

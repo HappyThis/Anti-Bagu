@@ -42,7 +42,11 @@ class TaskService:
 
     async def list_for(self, user: User) -> list[Task]:
         async with self._sessions() as session:
-            statement = select(Task).order_by(desc(Task.created_at))
+            statement = (
+                select(Task)
+                .where(Task.deleted_at.is_(None))
+                .order_by(desc(Task.created_at))
+            )
             if user.role != "admin":
                 statement = statement.where(Task.owner_id == user.id)
             return list((await session.scalars(statement)).all())
@@ -50,7 +54,11 @@ class TaskService:
     async def get_for(self, task_id: str, user: User) -> Task:
         async with self._sessions() as session:
             task = await session.get(Task, task_id)
-            if task is None or (user.role != "admin" and task.owner_id != user.id):
+            if (
+                task is None
+                or task.deleted_at is not None
+                or (user.role != "admin" and task.owner_id != user.id)
+            ):
                 raise TaskError("任务不存在")
             return task
 
@@ -91,6 +99,26 @@ class TaskService:
             task.name = name.strip()
             await session.commit()
             await session.refresh(task)
+        return task
+
+    async def soft_delete(self, task_id: str, user: User) -> Task:
+        async with self._sessions() as session:
+            task = await self._owned_task(session, task_id, user)
+            if task.status in {"running", "paused"}:
+                raise TaskError("进行中的面试不能删除，请先结束面试")
+            task.deleted_at = datetime.now(UTC)
+            task.deleted_by_id = user.id
+            session.add(
+                PlatformAudit(
+                    actor_user_id=user.id,
+                    action="task.deleted",
+                    target_type="task",
+                    target_id=task.id,
+                )
+            )
+            await session.commit()
+            await session.refresh(task)
+        await self._runtimes.release(task_id)
         return task
 
     async def preflight(self, task_id: str, user: User) -> tuple[Task, list[PreflightCheck]]:
@@ -225,6 +253,21 @@ class TaskService:
         task = await self.get_for(task_id, user)
         if task.status != "ready":
             raise TaskError("任务必须先通过系统检查")
+        if not self._agents.is_connected(user.id):
+            raise AgentUnavailable("桌面 Agent 未连接")
+        credentials = await self._credentials.get(user.id)
+        if (
+            credentials is None
+            or not credentials.dashscope_api_key
+            or not credentials.deepseek_api_key
+        ):
+            raise TaskError("请先在设置中保存模型服务密钥")
+        runtime = await self._runtimes.get(task_id)
+        await runtime.configure(
+            dashscope_api_key=credentials.dashscope_api_key,
+            deepseek_api_key=credentials.deepseek_api_key,
+        )
+        self._agents.stop_audio_test(user.id, task_id)
         await self._agents.send(user.id, {"type": "task.start", "task_id": task_id})
         return await self._set_status(task_id, user, "running", mark_started=True)
 
@@ -303,6 +346,6 @@ class TaskService:
     @staticmethod
     async def _owned_task(session: AsyncSession, task_id: str, user: User) -> Task:
         task = await session.get(Task, task_id)
-        if task is None or task.owner_id != user.id:
+        if task is None or task.deleted_at is not None or task.owner_id != user.id:
             raise TaskError("任务不存在")
         return task

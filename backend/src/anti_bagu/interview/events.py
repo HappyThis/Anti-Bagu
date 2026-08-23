@@ -35,6 +35,16 @@ class AnswerStatus(StrEnum):
     INTERRUPTED = "INTERRUPTED"
 
 
+class ContentKind(StrEnum):
+    KNOWLEDGE = "KNOWLEDGE"
+    CODING = "CODING"
+
+
+class FocusSource(StrEnum):
+    VOICE = "VOICE"
+    SCREENSHOT = "SCREENSHOT"
+
+
 class TranscriptEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -61,6 +71,12 @@ class CommittedFocus(BaseModel):
     question: str
     answer_mode: AnswerMode
     recommended_answer: str = ""
+    code: str = ""
+    language: str = ""
+    complexity: str = ""
+    content_kind: ContentKind = ContentKind.KNOWLEDGE
+    source: FocusSource = FocusSource.VOICE
+    screenshot_id: str = ""
     answer_status: AnswerStatus
     source_start_turn_id: int
     source_end_turn_id: int
@@ -74,14 +90,18 @@ class FocusResult(BaseModel):
     answer_mode: AnswerMode
     focus_question: str = ""
     answer: str = ""
+    content_kind: ContentKind = ContentKind.KNOWLEDGE
+    code: str = ""
+    language: str = ""
+    complexity: str = ""
 
     @model_validator(mode="after")
     def validate_protocol(self) -> FocusResult:
         if self.action is FocusAction.WAIT:
             if self.answer_mode is not AnswerMode.NONE:
                 raise ValueError("WAIT requires answer_mode NONE")
-            if self.focus_question or self.answer:
-                raise ValueError("WAIT requires empty focus_question and answer")
+            if self.focus_question or self.answer or self.code:
+                raise ValueError("WAIT requires empty focus_question, answer, and code")
             return self
 
         if not self.focus_question.strip():
@@ -90,8 +110,48 @@ class FocusResult(BaseModel):
             raise ValueError("RESPOND cannot use answer_mode NONE")
         if self.answer_mode is AnswerMode.FAST and not self.answer.strip():
             raise ValueError("FAST requires an answer")
-        if self.answer_mode is AnswerMode.THINK and self.answer:
-            raise ValueError("THINK requires an empty answer")
+        if self.answer_mode is AnswerMode.THINK and (self.answer or self.code):
+            raise ValueError("THINK requires an empty answer and code")
+        if self.content_kind is ContentKind.CODING and self.answer_mode is AnswerMode.FAST:
+            if not self.code.strip():
+                raise ValueError("FAST CODING requires code")
+            if not self.language.strip():
+                self.language = "python"
+        return self
+
+
+class ScreenshotFocusResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: FocusAction
+    focus_question: str = ""
+    answer: str = ""
+    content_kind: ContentKind = ContentKind.CODING
+    code: str = ""
+    language: str = ""
+    complexity: str = ""
+
+    @model_validator(mode="after")
+    def validate_protocol(self) -> ScreenshotFocusResult:
+        if self.action is FocusAction.WAIT:
+            if (
+                self.focus_question
+                or self.answer
+                or self.code
+                or self.language
+                or self.complexity
+            ):
+                raise ValueError("WAIT requires all response fields to be empty")
+            return self
+        if not self.focus_question.strip():
+            raise ValueError("RESPOND requires a focus_question")
+        if not self.answer.strip():
+            raise ValueError("RESPOND requires an answer")
+        if self.content_kind is ContentKind.CODING:
+            if not self.code.strip():
+                raise ValueError("CODING requires code")
+            if not self.language.strip():
+                self.language = "python"
         return self
 
 

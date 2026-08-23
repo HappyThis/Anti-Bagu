@@ -26,7 +26,7 @@ class Settings:
     port: int = 8765
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-v4-flash"
+    deepseek_model: str = "deepseek-v4-flash-vision-exp"
     dashscope_api_key: str | None = None
     dashscope_ws_url: str = "wss://dashscope.aliyuncs.com/api-ws/v1/inference"
     asr_model: str = "qwen-audio-3.0-asr-flash-streaming"
@@ -37,6 +37,7 @@ class Settings:
     focus_debounce_ms: int = 300
     focus_max_coalesce_ms: int = 1_200
     focus_timeout_seconds: float = 5.0
+    screenshot_focus_timeout_seconds: float = 30.0
     audit_log_dir: Path = REPO_ROOT / ".runtime" / "logs"
     audit_include_text: bool = False
     audit_ring_size: int = 1_000
@@ -97,7 +98,7 @@ class Settings:
                 "ANTIBAGU_MODEL_BASE_URL", "https://api.deepseek.com"
             ),
             deepseek_model=os.environ.get(
-                "ANTIBAGU_MODEL_NAME", "deepseek-v4-flash"
+                "ANTIBAGU_MODEL_NAME", "deepseek-v4-flash-vision-exp"
             ),
             dashscope_api_key=os.environ.get("DASHSCOPE_API_KEY"),
             dashscope_ws_url=os.environ.get(
@@ -127,6 +128,9 @@ class Settings:
             ),
             focus_timeout_seconds=float(
                 os.environ.get("ANTIBAGU_FOCUS_TIMEOUT_SECONDS", "5")
+            ),
+            screenshot_focus_timeout_seconds=float(
+                os.environ.get("ANTIBAGU_SCREENSHOT_FOCUS_TIMEOUT_SECONDS", "30")
             ),
             audit_log_dir=audit_log_dir,
             audit_include_text=os.environ.get(

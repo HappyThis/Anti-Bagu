@@ -18,6 +18,7 @@ export function AdminShell() {
     <div className="admin-app">
       <header className="admin-topbar">
         <div className="admin-brand">
+          <img src="/brand/anti-bagu-logo.png" alt="" />
           <strong>Anti-Bagu</strong>
           <span>管理端</span>
         </div>

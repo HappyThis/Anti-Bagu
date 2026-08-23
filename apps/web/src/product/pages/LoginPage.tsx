@@ -31,7 +31,7 @@ export function LoginPage() {
   return (
     <main className="auth-page">
       <section className="auth-brand-panel">
-        <Link className="auth-brand" to="/">Anti-Bagu</Link>
+        <Link className="auth-brand" to="/"><img src="/brand/anti-bagu-logo.png" alt="" />Anti-Bagu</Link>
         <div>
           <span>云端面试工作台</span>
           <h1>听清面试问题，及时看到回答提示。</h1>

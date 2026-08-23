@@ -11,13 +11,14 @@ from anti_bagu.interview.events import (
     AnswerStatus,
     Channel,
     FocusAction,
+    FocusSource,
     RealtimeEvent,
     TranscriptEvent,
     TranscriptPhase,
 )
 from anti_bagu.interview.sink import EventSink
 from anti_bagu.interview.state import SessionState
-from anti_bagu.llm.base import FocusResponder, ThinkingAnswerer
+from anti_bagu.llm.base import FocusResponder, ScreenshotAnalyzer, ThinkingAnswerer
 
 
 class InterviewCoordinator:
@@ -25,6 +26,7 @@ class InterviewCoordinator:
         self,
         focus_responder: FocusResponder,
         thinking_answerer: ThinkingAnswerer,
+        screenshot_analyzer: ScreenshotAnalyzer,
         sink: EventSink,
         prompt_builder: FocusPromptBuilder,
         *,
@@ -32,33 +34,46 @@ class InterviewCoordinator:
         debounce_seconds: float = 0.3,
         max_coalesce_seconds: float = 1.2,
         focus_timeout_seconds: float = 5.0,
+        screenshot_timeout_seconds: float = 30.0,
     ) -> None:
         self.session_id = session_id or str(uuid.uuid4())
         self.store = ConversationStore()
         self.state = SessionState.LISTENING
         self._focus_responder = focus_responder
         self._thinking_answerer = thinking_answerer
+        self._screenshot_analyzer = screenshot_analyzer
         self._sink = sink
         self._prompt_builder = prompt_builder
         self._debounce_seconds = debounce_seconds
         self._max_coalesce_seconds = max_coalesce_seconds
         self._focus_timeout_seconds = focus_timeout_seconds
+        self._screenshot_timeout_seconds = screenshot_timeout_seconds
 
         self._seen_final_events: set[str] = set()
         self._debounce_task: asyncio.Task[None] | None = None
         self._focus_task: asyncio.Task[None] | None = None
         self._answer_task: asyncio.Task[None] | None = None
+        self._screenshot_task: asyncio.Task[None] | None = None
         self._focus_generation = 0
         self._last_started_turn_id = 0
         self._coalesce_started_at: float | None = None
         self._last_interviewer_activity_at: float | None = None
         self._last_interviewer_audio_end: float | None = None
+        self._screenshot_focus_active = False
+        self._pending_voice_focus = False
+        self._closing = False
 
     @property
     def model_task_active(self) -> bool:
-        return self._task_active(self._focus_task) or self._task_active(
-            self._answer_task
+        return (
+            self._task_active(self._focus_task)
+            or self._task_active(self._answer_task)
+            or self._task_active(self._screenshot_task)
         )
+
+    @property
+    def screenshot_focus_active(self) -> bool:
+        return self._screenshot_focus_active
 
     @property
     def active_focus_generation(self) -> int:
@@ -104,7 +119,97 @@ class InterviewCoordinator:
                 {"asr": max(0.0, (event.created_at - event.audio_ended_at) * 1000)},
             )
         self._mark_interviewer_activity()
+        if self._screenshot_focus_active:
+            self._pending_voice_focus = True
+            await self._emit(
+                "focus.deferred",
+                {
+                    "reason": "screenshot_focus_active",
+                    "latest_turn_id": self.store.latest_turn_id,
+                },
+            )
+            return
         await self._schedule_focus_window()
+
+    async def handle_screenshot(
+        self,
+        *,
+        screenshot_id: str,
+        image_data: bytes,
+        mime_type: str,
+        storage_path: str,
+    ) -> bool:
+        if self._screenshot_focus_active:
+            await self._emit(
+                "screenshot.rejected",
+                {"screenshot_id": screenshot_id, "reason": "focus_busy"},
+            )
+            return False
+
+        self._screenshot_focus_active = True
+        self._pending_voice_focus = False
+        await self._cancel_task(self._debounce_task)
+        self._debounce_task = None
+        self._coalesce_started_at = None
+        self._last_interviewer_activity_at = None
+        await self._cancel_active_focus("screenshot_focus")
+        await self._cancel_answer("screenshot_focus")
+
+        prompt = self._prompt_builder.build(
+            turns=self.store.turns,
+            focuses=self.store.focuses,
+        )
+        self._focus_generation += 1
+        generation = self._focus_generation
+        self._last_started_turn_id = max(
+            self._last_started_turn_id, prompt.through_turn_id
+        )
+        self.state = SessionState.EVALUATING
+        await self._emit(
+            "screenshot.accepted",
+            {
+                "screenshot_id": screenshot_id,
+                "generation": generation,
+                "mime_type": mime_type,
+                "bytes": len(image_data),
+                "storage_path": storage_path,
+                "through_turn_id": prompt.through_turn_id,
+            },
+        )
+        await self._emit(
+            "focus.started",
+            {
+                "generation": generation,
+                "source": FocusSource.SCREENSHOT.value,
+                "screenshot_id": screenshot_id,
+                "through_turn_id": prompt.through_turn_id,
+                "included_turn_count": len(prompt.included_turn_ids),
+                "included_focus_count": len(prompt.included_focus_ids),
+                "estimated_prompt_tokens": prompt.estimated_total_tokens,
+                "exclusive": True,
+            },
+        )
+        await self._emit(
+            "internal.llm.request",
+            {
+                "operation": "screenshot_focus",
+                "generation": generation,
+                "screenshot_id": screenshot_id,
+                "storage_path": storage_path,
+                "prompt": prompt.markdown,
+                "estimated_prompt_tokens": prompt.estimated_total_tokens,
+            },
+        )
+        self._screenshot_task = asyncio.create_task(
+            self._run_screenshot_focus(
+                generation=generation,
+                screenshot_id=screenshot_id,
+                image_data=image_data,
+                mime_type=mime_type,
+                prompt=prompt,
+            )
+        )
+        return True
 
     @staticmethod
     def _transcript_payload(event: TranscriptEvent) -> dict[str, object]:
@@ -126,6 +231,7 @@ class InterviewCoordinator:
                     self._debounce_task,
                     self._focus_task,
                     self._answer_task,
+                    self._screenshot_task,
                 )
                 if self._task_active(task)
             ]
@@ -135,9 +241,13 @@ class InterviewCoordinator:
             await asyncio.sleep(0)
 
     async def close(self) -> None:
+        self._closing = True
         await self._cancel_task(self._debounce_task)
         await self._cancel_task(self._focus_task)
         await self._cancel_answer("session_closed")
+        await self._cancel_task(self._screenshot_task)
+        self._screenshot_task = None
+        self._screenshot_focus_active = False
 
     async def _handle_partial(self, event: TranscriptEvent) -> None:
         if event.channel is not Channel.INTERVIEWER or not event.text.strip():
@@ -153,6 +263,9 @@ class InterviewCoordinator:
         self._last_interviewer_activity_at = now
 
     async def _schedule_focus_window(self) -> None:
+        if self._screenshot_focus_active:
+            self._pending_voice_focus = True
+            return
         is_reset = self._task_active(self._debounce_task)
         if is_reset:
             self._debounce_task.cancel()
@@ -191,6 +304,16 @@ class InterviewCoordinator:
                 self._debounce_task = None
 
     async def _start_focus_attempt(self) -> None:
+        if self._screenshot_focus_active:
+            self._pending_voice_focus = True
+            await self._emit(
+                "focus.deferred",
+                {
+                    "reason": "screenshot_focus_active",
+                    "latest_turn_id": self.store.latest_turn_id,
+                },
+            )
+            return
         if self.store.latest_turn_id <= self._last_started_turn_id:
             await self._emit(
                 "focus.skipped",
@@ -282,6 +405,7 @@ class InterviewCoordinator:
                     "action": result.action.value,
                     "mode": result.answer_mode.value,
                     "question": result.focus_question,
+                    "content_kind": result.content_kind.value,
                     "duration_ms": duration_ms,
                 },
             )
@@ -294,6 +418,10 @@ class InterviewCoordinator:
                     "mode": result.answer_mode.value,
                     "question": result.focus_question,
                     "answer": result.answer,
+                    "content_kind": result.content_kind.value,
+                    "code": result.code,
+                    "language": result.language,
+                    "complexity": result.complexity,
                     "duration_ms": duration_ms,
                 },
             )
@@ -322,6 +450,10 @@ class InterviewCoordinator:
                 recommended_answer=result.answer,
                 answer_status=status,
                 source_end_turn_id=prompt.through_turn_id,
+                code=result.code,
+                language=result.language,
+                complexity=result.complexity,
+                content_kind=result.content_kind,
             )
             await self._emit(
                 "focus.updated",
@@ -330,6 +462,10 @@ class InterviewCoordinator:
                     "generation": generation,
                     "question": committed.question,
                     "mode": committed.answer_mode.value,
+                    "source": committed.source.value,
+                    "content_kind": committed.content_kind.value,
+                    "has_code": bool(committed.code),
+                    "language": committed.language,
                     "source_start_turn_id": committed.source_start_turn_id,
                     "source_end_turn_id": committed.source_end_turn_id,
                 },
@@ -344,6 +480,11 @@ class InterviewCoordinator:
                         "focus_id": committed.focus_id,
                         "question": committed.question,
                         "answer": committed.recommended_answer,
+                        "content_kind": committed.content_kind.value,
+                        "code": committed.code,
+                        "language": committed.language,
+                        "complexity": committed.complexity,
+                        "source": committed.source.value,
                         "mode": committed.answer_mode.value,
                         "duration_ms": duration_ms,
                     },
@@ -396,6 +537,175 @@ class InterviewCoordinator:
                     "error",
                     {"message": str(exc), "operation": "focus"},
                 )
+
+    async def _run_screenshot_focus(
+        self,
+        *,
+        generation: int,
+        screenshot_id: str,
+        image_data: bytes,
+        mime_type: str,
+        prompt: FocusPromptBuildResult,
+    ) -> None:
+        current_task = asyncio.current_task()
+        model_started_at = time.time()
+        outcome = "completed"
+        try:
+            result = await asyncio.wait_for(
+                self._screenshot_analyzer.analyze(
+                    prompt=prompt.markdown,
+                    image_data=image_data,
+                    mime_type=mime_type,
+                ),
+                timeout=self._screenshot_timeout_seconds,
+            )
+            duration_ms = max(0.0, (time.time() - model_started_at) * 1000)
+            await self._emit(
+                "focus.responded",
+                {
+                    "generation": generation,
+                    "through_turn_id": prompt.through_turn_id,
+                    "action": result.action.value,
+                    "mode": AnswerMode.THINK.value,
+                    "source": FocusSource.SCREENSHOT.value,
+                    "screenshot_id": screenshot_id,
+                    "question": result.focus_question,
+                    "content_kind": result.content_kind.value,
+                    "duration_ms": duration_ms,
+                },
+            )
+            await self._emit(
+                "internal.llm.response",
+                {
+                    "operation": "screenshot_focus",
+                    "generation": generation,
+                    "screenshot_id": screenshot_id,
+                    "action": result.action.value,
+                    "question": result.focus_question,
+                    "answer": result.answer,
+                    "content_kind": result.content_kind.value,
+                    "code": result.code,
+                    "language": result.language,
+                    "complexity": result.complexity,
+                    "duration_ms": duration_ms,
+                },
+            )
+            if result.action is FocusAction.WAIT:
+                outcome = "no_question"
+                await self._emit(
+                    "focus.wait",
+                    {
+                        "generation": generation,
+                        "through_turn_id": prompt.through_turn_id,
+                        "source": FocusSource.SCREENSHOT.value,
+                        "screenshot_id": screenshot_id,
+                        "duration_ms": duration_ms,
+                    },
+                )
+                return
+
+            committed = self.store.commit_focus(
+                question=result.focus_question,
+                answer_mode=AnswerMode.THINK,
+                recommended_answer=result.answer,
+                answer_status=AnswerStatus.COMPLETED,
+                source_end_turn_id=prompt.through_turn_id,
+                code=result.code,
+                language=result.language,
+                complexity=result.complexity,
+                content_kind=result.content_kind,
+                source=FocusSource.SCREENSHOT,
+                screenshot_id=screenshot_id,
+            )
+            await self._emit(
+                "focus.updated",
+                {
+                    "focus_id": committed.focus_id,
+                    "generation": generation,
+                    "question": committed.question,
+                    "mode": committed.answer_mode.value,
+                    "source": committed.source.value,
+                    "screenshot_id": screenshot_id,
+                    "content_kind": committed.content_kind.value,
+                    "has_code": bool(committed.code),
+                    "language": committed.language,
+                    "source_start_turn_id": committed.source_start_turn_id,
+                    "source_end_turn_id": committed.source_end_turn_id,
+                },
+            )
+            await self._emit_model_latency(model_started_at)
+            await self._emit(
+                "answer.completed",
+                {
+                    "focus_id": committed.focus_id,
+                    "question": committed.question,
+                    "answer": committed.recommended_answer,
+                    "content_kind": committed.content_kind.value,
+                    "code": committed.code,
+                    "language": committed.language,
+                    "complexity": committed.complexity,
+                    "source": committed.source.value,
+                    "screenshot_id": screenshot_id,
+                    "mode": committed.answer_mode.value,
+                    "duration_ms": duration_ms,
+                },
+            )
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except TimeoutError:
+            outcome = "timeout"
+            await self._emit(
+                "focus.timeout",
+                {
+                    "generation": generation,
+                    "source": FocusSource.SCREENSHOT.value,
+                    "screenshot_id": screenshot_id,
+                    "timeout_ms": self._screenshot_timeout_seconds * 1000,
+                },
+            )
+            await self._emit(
+                "error",
+                {"message": "截图分析超时，请重新截图", "operation": "screenshot_focus"},
+            )
+        except Exception as exc:
+            outcome = "error"
+            await self._emit(
+                "focus.error",
+                {
+                    "generation": generation,
+                    "source": FocusSource.SCREENSHOT.value,
+                    "screenshot_id": screenshot_id,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+            await self._emit(
+                "error", {"message": str(exc), "operation": "screenshot_focus"}
+            )
+        finally:
+            self.state = SessionState.LISTENING
+            self._screenshot_focus_active = False
+            if self._screenshot_task is current_task:
+                self._screenshot_task = None
+            await self._emit(
+                "screenshot.focus.released",
+                {
+                    "screenshot_id": screenshot_id,
+                    "generation": generation,
+                    "outcome": outcome,
+                    "pending_voice_focus": self._pending_voice_focus,
+                },
+            )
+            should_refresh = (
+                self._pending_voice_focus
+                and self.store.latest_turn_id > self._last_started_turn_id
+                and not self._closing
+            )
+            self._pending_voice_focus = False
+            if should_refresh:
+                self._mark_interviewer_activity()
+                await self._schedule_focus_window()
 
     async def _run_thinking_answer(self, focus_id: str, question: str) -> None:
         model_started_at = time.time()
@@ -476,6 +786,19 @@ class InterviewCoordinator:
         self._answer_task.cancel()
         await asyncio.gather(self._answer_task, return_exceptions=True)
         self._answer_task = None
+        return True
+
+    async def _cancel_active_focus(self, reason: str) -> bool:
+        if not self._task_active(self._focus_task):
+            return False
+        cancelled_generation = self._focus_generation
+        self._focus_task.cancel()
+        await asyncio.gather(self._focus_task, return_exceptions=True)
+        self._focus_task = None
+        await self._emit(
+            "focus.cancelled",
+            {"generation": cancelled_generation, "reason": reason},
+        )
         return True
 
     async def _emit_model_latency(self, model_started_at: float) -> None:

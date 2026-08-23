@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle, Clock, FileText, MagnifyingGlass } from '@phosphor-icons/react'
+import { ArrowRight, CheckCircle, Clock, FileText, MagnifyingGlass, PencilSimple, Trash } from '@phosphor-icons/react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -30,10 +30,15 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 export function ReviewsPage() {
   const navigate = useNavigate()
   const { session } = useAuth()
-  const { tasks, loading: tasksLoading } = useProduct()
+  const { tasks, loading: tasksLoading, renameTask, deleteTask } = useProduct()
   const [query, setQuery] = useState('')
   const [reviews, setReviews] = useState<ApiReview[]>([])
   const [reviewsLoading, setReviewsLoading] = useState(true)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null)
+  const [draftName, setDraftName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     if (!session) return
@@ -49,8 +54,39 @@ export function ReviewsPage() {
   const normalizedQuery = query.trim().toLowerCase()
   const visibleTasks = tasks.filter((task) => task.name.toLowerCase().includes(normalizedQuery))
   const completedCount = tasks.filter((task) => task.status === 'completed').length
-  const totalQuestions = reviews.reduce((sum, review) => sum + review.question_count, 0)
+  const taskIDs = new Set(tasks.map((task) => task.id))
+  const totalQuestions = reviews.reduce((sum, review) => sum + (taskIDs.has(review.task_id) ? review.question_count : 0), 0)
   const loading = tasksLoading || reviewsLoading
+  const editingTask = tasks.find((task) => task.id === editingTaskId)
+  const deletingTask = tasks.find((task) => task.id === deletingTaskId)
+
+  async function saveName() {
+    if (!editingTask || !draftName.trim()) return
+    setSaving(true)
+    setActionError('')
+    try {
+      await renameTask(editingTask.id, draftName.trim())
+      setEditingTaskId(null)
+    } catch (requestError) {
+      setActionError(requestError instanceof Error ? requestError.message : '修改失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deletingTask) return
+    setSaving(true)
+    setActionError('')
+    try {
+      await deleteTask(deletingTask.id)
+      setDeletingTaskId(null)
+    } catch (requestError) {
+      setActionError(requestError instanceof Error ? requestError.message : '删除失败')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <section className="content-page">
@@ -74,23 +110,26 @@ export function ReviewsPage() {
             const review = reviewByTask.get(task.id)
             const duration = review ? `${Math.max(1, Math.round(review.duration_seconds / 60))} 分钟` : '尚未完成'
             return (
-              <button className="review-row" key={task.id} type="button" onClick={() => navigate(`/reviews/${task.id}`)}>
+              <div className="review-row" key={task.id}>
                 <span className="review-icon"><FileText size={22} /></span>
-                <span className="review-primary">
+                <button className="review-primary review-primary-button" type="button" onClick={() => navigate(`/reviews/${task.id}`)}>
                   <strong>{task.name}</strong>
                   <time>{task.createdAt}</time>
-                </span>
+                </button>
                 <span><Clock size={17} />{duration}</span>
                 <span>{review ? `${review.question_count} 个问题` : '暂无问题'}</span>
                 <span className={`record-status record-status--${task.status}`}><CheckCircle size={17} />{STATUS_LABEL[task.status]}</span>
-                <ArrowRight size={19} />
-              </button>
+                <button className="review-open-button" type="button" aria-label={`查看 ${task.name}`} onClick={() => navigate(`/reviews/${task.id}`)}><ArrowRight size={19} /></button>
+                <div className="review-row-actions"><button type="button" aria-label={`修改 ${task.name}`} onClick={() => { setEditingTaskId(task.id); setDraftName(task.name); setActionError('') }}><PencilSimple size={17} /></button><button type="button" aria-label={`删除 ${task.name}`} disabled={task.status === 'running' || task.status === 'paused'} onClick={() => { setDeletingTaskId(task.id); setActionError('') }}><Trash size={17} /></button></div>
+              </div>
             )
           })}
           {visibleTasks.length === 0 ? <div className="table-empty-state"><MagnifyingGlass size={24} /><strong>{loading ? '正在加载面试记录…' : '没有找到面试'}</strong><span>{loading ? '请稍候' : '新建面试后会显示在这里'}</span></div> : null}
         </div>
         <footer className="list-footer"><span>显示 {visibleTasks.length} / {tasks.length} 条记录</span></footer>
       </section>
+      {editingTask ? <div className="dialog-backdrop" role="presentation"><section className="record-action-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-record-title"><span className="eyebrow">面试记录</span><h2 id="rename-record-title">修改面试名称</h2><p>新的名称会同步显示在面试记录和复盘页面。</p><label><span>面试名称</span><input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveName(); if (event.key === 'Escape') setEditingTaskId(null) }} /></label>{actionError ? <div className="form-error" role="alert">{actionError}</div> : null}<div className="dialog-actions"><button className="secondary-action" type="button" onClick={() => setEditingTaskId(null)}>取消</button><button className="primary-action" type="button" disabled={!draftName.trim() || saving} onClick={() => void saveName()}>{saving ? '正在保存…' : '保存名称'}</button></div></section></div> : null}
+      {deletingTask ? <div className="dialog-backdrop" role="presentation"><section className="record-action-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-record-title"><span className="eyebrow eyebrow--danger">删除记录</span><h2 id="delete-record-title">确定删除“{deletingTask.name}”吗？</h2><p>删除后你将看不到这条记录，但管理员仍可恢复，所有面试数据都会保留。</p>{actionError ? <div className="form-error" role="alert">{actionError}</div> : null}<div className="dialog-actions"><button className="secondary-action" type="button" onClick={() => setDeletingTaskId(null)}>取消</button><button className="danger-action" type="button" disabled={saving} onClick={() => void confirmDelete()}>{saving ? '正在删除…' : '删除记录'}</button></div></section></div> : null}
     </section>
   )
 }

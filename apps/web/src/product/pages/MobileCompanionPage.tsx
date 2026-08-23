@@ -1,16 +1,20 @@
-import { CheckCircle, DeviceMobile, WarningCircle, Waveform } from '@phosphor-icons/react'
-import { useEffect, useState } from 'react'
+import { Bell, CheckCircle, WarningCircle, Waveform } from '@phosphor-icons/react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
+import { applyAnswerEvent, type AnswerCard } from '../../features/answer/answerCards'
 import { websocketUrl } from '../../shared/api'
 import type { RealtimeEvent } from '../../shared/protocol'
 
 export function MobileCompanionPage() {
   const { pairingToken = '' } = useParams()
+  const feedRef = useRef<HTMLDivElement>(null)
+  const previousCardCount = useRef(0)
+  const previousFeedHeight = useRef(0)
+  const browsingHistory = useRef(false)
   const [connection, setConnection] = useState<'connecting' | 'connected' | 'expired'>('connecting')
-  const [focus, setFocus] = useState('等待面试官提出问题')
-  const [answer, setAnswer] = useState('建议回答会在识别到完整问题后显示。')
-  const [generating, setGenerating] = useState(false)
+  const [cards, setCards] = useState<AnswerCard[]>([])
+  const [hasNewAnswer, setHasNewAnswer] = useState(false)
 
   useEffect(() => {
     const socket = new WebSocket(websocketUrl(`/ws/mobile/${pairingToken}`))
@@ -20,21 +24,28 @@ export function MobileCompanionPage() {
     })
     socket.addEventListener('message', (message) => {
       const event = JSON.parse(message.data) as RealtimeEvent
-      if (event.type === 'focus.updated') {
-        setFocus(String(event.payload.question ?? ''))
-        setAnswer('正在生成建议回答…')
-      } else if (event.type === 'answer.started') {
-        setGenerating(true)
-        setAnswer('')
-      } else if (event.type === 'answer.delta') {
-        setAnswer((current) => current + String(event.payload.delta ?? ''))
-      } else if (event.type === 'answer.completed') {
-        setGenerating(false)
-        setAnswer(String(event.payload.answer ?? ''))
-      }
+      setCards((current) => applyAnswerEvent(current, event))
     })
     return () => socket.close()
   }, [pairingToken])
+
+  useLayoutEffect(() => {
+    const feed = feedRef.current
+    if (!feed) return
+    const previousCount = previousCardCount.current
+    const heightDelta = feed.scrollHeight - previousFeedHeight.current
+    const hasNewCard = cards.length > previousCount
+    if (browsingHistory.current && previousFeedHeight.current > 0 && heightDelta > 0) {
+      feed.scrollTop += heightDelta
+    } else if (!browsingHistory.current && hasNewCard) {
+      feed.scrollTo({ top: 0, behavior: previousCount ? 'smooth' : 'auto' })
+    }
+    if (browsingHistory.current && hasNewCard) {
+      setHasNewAnswer(true)
+    }
+    previousCardCount.current = cards.length
+    previousFeedHeight.current = feed.scrollHeight
+  }, [cards])
 
   if (connection === 'expired') {
     return (
@@ -46,21 +57,115 @@ export function MobileCompanionPage() {
     )
   }
 
+  const newestFirst = [...cards].reverse()
   return (
-    <main className="mobile-companion-page">
+    <main className="mobile-companion-page mobile-companion-page--answers">
       <header>
-        <span className="mobile-brand"><DeviceMobile size={21} weight="duotone" />Anti-Bagu</span>
+        <span className="mobile-brand"><img src="/brand/anti-bagu-logo.png" alt="" />Anti-Bagu</span>
         <span className={`mobile-live-state mobile-live-state--${connection}`}><i />{connection === 'connected' ? '已连接' : '正在连接'}</span>
       </header>
-      <section className="mobile-focus-card">
-        <span><Waveform size={17} />当前问题</span>
-        <h1>{focus}</h1>
-      </section>
-      <section className="mobile-answer-card">
-        <div><span>建议回答</span>{generating ? <em>生成中</em> : <CheckCircle size={18} weight="fill" />}</div>
-        <p>{answer}{generating ? <i className="cursor" /> : null}</p>
-      </section>
-      <footer>请保持屏幕常亮 · 任务结束后连接会自动关闭</footer>
+      {hasNewAnswer ? <button className="mobile-new-answer" type="button" onClick={() => { browsingHistory.current = false; feedRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); setHasNewAnswer(false) }}><Bell size={15} weight="fill" />有新回答</button> : null}
+      <div className="mobile-answer-feed" ref={feedRef} onScroll={() => { const browsing = (feedRef.current?.scrollTop ?? 0) > 40; browsingHistory.current = browsing; if (!browsing) setHasNewAnswer(false) }}>
+        {newestFirst.length ? newestFirst.map((card, index) => <MobileAnswerSlide card={card} position={cards.length - index} total={cards.length} key={card.id} />) : (
+          <article className="mobile-answer-slide mobile-answer-slide--empty">
+            <section className="mobile-qa-card"><header><span className="mobile-answer-index">等待中</span></header><div className="mobile-question-block"><span><Waveform size={14} />当前问题</span><h1>等待面试官提出问题</h1></div><div className="mobile-response-block"><span>建议回答</span><AutoFitAnswer text="识别到完整问题后，建议回答会显示在这里。" generating={false} /></div></section>
+          </article>
+        )}
+      </div>
     </main>
   )
+}
+
+const MobileAnswerSlide = memo(function MobileAnswerSlide({ card, position, total }: { card: AnswerCard; position: number; total: number }) {
+  return (
+    <article className="mobile-answer-slide">
+      <section className="mobile-qa-card">
+        <header><span className="mobile-answer-index">{position} / {total}</span>{card.generating ? <em>生成中</em> : card.cancelled ? <em>已切换</em> : <CheckCircle size={17} weight="fill" />}</header>
+        <div className="mobile-question-block">
+          <span><Waveform size={14} />问题</span>
+          <h1>{card.question}</h1>
+        </div>
+        <MobileCardContent card={card} />
+      </section>
+    </article>
+  )
+})
+
+function MobileCardContent({ card }: { card: AnswerCard }) {
+  const panesRef = useRef<HTMLDivElement>(null)
+  const [pane, setPane] = useState(0)
+  const hasCode = Boolean(card.code)
+
+  if (!hasCode) {
+    return <div className="mobile-response-block"><span>建议回答</span>{card.error ? <p className="error-copy">{card.error}</p> : null}<AutoFitAnswer text={card.answer || (card.generating ? '正在生成建议回答…' : '建议回答准备中…')} generating={card.generating} /></div>
+  }
+
+  return (
+    <div className="mobile-card-content">
+      <div className="mobile-card-panes" ref={panesRef} onScroll={() => { const viewport = panesRef.current; if (viewport?.clientWidth) setPane(Math.round(viewport.scrollLeft / viewport.clientWidth)) }}>
+        <section className="mobile-response-block mobile-card-pane">
+          <span>解题思路</span>
+          {card.error ? <p className="error-copy">{card.error}</p> : null}
+          <AutoFitAnswer text={card.answer || '正在整理解题思路…'} generating={card.generating} />
+        </section>
+        <section className="mobile-code-block mobile-card-pane">
+          <span>{card.language || 'Python'} 代码</span>
+          <AutoFitCode code={card.code} complexity={card.complexity} />
+        </section>
+      </div>
+      <div className="mobile-pane-indicator" aria-label={pane === 0 ? '当前显示解题思路，向左滑查看代码' : '当前显示代码，向右滑查看解题思路'}><i className={pane === 0 ? 'active' : ''} /><i className={pane === 1 ? 'active' : ''} /><span>{pane === 0 ? '左滑看代码' : '右滑看思路'}</span></div>
+    </div>
+  )
+}
+
+function AutoFitAnswer({ text, generating }: { text: string; generating: boolean }) {
+  const copyRef = useRef<HTMLParagraphElement>(null)
+
+  useLayoutEffect(() => {
+    const element = copyRef.current
+    if (!element) return
+    const fit = () => {
+      let fontSize = 16
+      element.style.fontSize = `${fontSize}px`
+      while (element.scrollHeight > element.clientHeight && fontSize > 9) {
+        fontSize -= 0.5
+        element.style.fontSize = `${fontSize}px`
+      }
+    }
+    const frame = window.requestAnimationFrame(fit)
+    const observer = new ResizeObserver(fit)
+    observer.observe(element.parentElement ?? element)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [text])
+
+  return <p className="mobile-answer-copy" ref={copyRef}>{text}{generating ? <i className="cursor" /> : null}</p>
+}
+
+function AutoFitCode({ code, complexity }: { code: string; complexity: string }) {
+  const codeRef = useRef<HTMLElement>(null)
+
+  useLayoutEffect(() => {
+    const element = codeRef.current
+    if (!element) return
+    const fit = () => {
+      let fontSize = 12
+      element.style.fontSize = `${fontSize}px`
+      while ((element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth) && fontSize > 7) {
+        fontSize -= 0.5
+        element.style.fontSize = `${fontSize}px`
+      }
+    }
+    const frame = window.requestAnimationFrame(fit)
+    const observer = new ResizeObserver(fit)
+    observer.observe(element)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [code, complexity])
+
+  return <div className="mobile-code-copy"><code ref={codeRef}>{code}</code>{complexity ? <small>{complexity}</small> : null}</div>
 }

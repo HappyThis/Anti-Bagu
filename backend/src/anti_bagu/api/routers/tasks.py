@@ -66,6 +66,15 @@ async def update_task(
     return await _task_call(service.rename(task_id, principal.user, payload.name))
 
 
+@router.delete("/{task_id}", response_model=TaskView)
+async def delete_task(
+    task_id: str,
+    principal: Principal = Depends(current_principal),
+    service: TaskService = Depends(task_service),
+):
+    return await _task_call(service.soft_delete(task_id, principal.user))
+
+
 @router.post("/{task_id}/preflight", response_model=PreflightResponse)
 async def preflight(
     task_id: str,
@@ -83,9 +92,66 @@ async def preflight(
     )
 
 
+@router.post("/{task_id}/audio-test/start")
+async def start_audio_test(
+    task_id: str,
+    request: Request,
+    principal: Principal = Depends(current_principal),
+    service: TaskService = Depends(task_service),
+):
+    await _task_call(service.get_for(task_id, principal.user))
+    hub = request.app.state.agent_hub
+    connection = hub.get(principal.user.id)
+    if connection is None:
+        raise HTTPException(status_code=409, detail="桌面 Agent 未连接")
+    capabilities = connection.device.get("capabilities") or []
+    if "preflight_audio_test_v1" not in capabilities:
+        raise HTTPException(status_code=409, detail="电脑助手版本过旧，请重新下载并打开最新版")
+    hub.start_audio_test(principal.user.id, task_id)
+    try:
+        await hub.send(
+            principal.user.id,
+            {"type": "preflight.audio_test.start", "task_id": task_id},
+        )
+    except AgentUnavailable as exc:
+        hub.stop_audio_test(principal.user.id, task_id)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@router.get("/{task_id}/audio-test")
+async def audio_test_state(
+    task_id: str,
+    request: Request,
+    principal: Principal = Depends(current_principal),
+    service: TaskService = Depends(task_service),
+):
+    await _task_call(service.get_for(task_id, principal.user))
+    state = request.app.state.agent_hub.audio_test_state(principal.user.id, task_id)
+    return {**state, "agent_connected": request.app.state.agent_hub.is_connected(principal.user.id)}
+
+
+@router.post("/{task_id}/audio-test/stop")
+async def stop_audio_test(
+    task_id: str,
+    request: Request,
+    principal: Principal = Depends(current_principal),
+    service: TaskService = Depends(task_service),
+):
+    await _task_call(service.get_for(task_id, principal.user))
+    hub = request.app.state.agent_hub
+    hub.stop_audio_test(principal.user.id, task_id)
+    try:
+        await hub.send(principal.user.id, {"type": "preflight.audio_test.stop", "task_id": task_id})
+    except AgentUnavailable:
+        pass
+    return {"ok": True}
+
+
 @router.get("/{task_id}/preflight")
 async def latest_preflight(
     task_id: str,
+    request: Request,
     principal: Principal = Depends(current_principal),
     service: TaskService = Depends(task_service),
     session: AsyncSession = Depends(get_db),
@@ -98,7 +164,34 @@ async def latest_preflight(
         .order_by(desc(TaskEvent.created_at))
         .limit(1)
     )
-    return event.payload if event is not None else {"ready": False, "checks": []}
+    connection = request.app.state.agent_hub.get(principal.user.id)
+    if connection is None:
+        return {
+            "ready": False,
+            "checks": [
+                {
+                    "key": "agent",
+                    "label": "桌面 Agent",
+                    "ok": False,
+                    "detail": "桌面 Agent 未连接",
+                    "latency_ms": None,
+                }
+            ],
+        }
+    if event is None or event.created_at.timestamp() < connection.connected_at:
+        return {
+            "ready": False,
+            "checks": [
+                {
+                    "key": "agent",
+                    "label": "桌面 Agent",
+                    "ok": True,
+                    "detail": "控制通道已连接，请重新确认声音",
+                    "latency_ms": None,
+                }
+            ],
+        }
+    return event.payload
 
 
 @router.post("/{task_id}/start", response_model=TaskView)

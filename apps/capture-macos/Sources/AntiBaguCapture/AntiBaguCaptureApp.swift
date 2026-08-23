@@ -87,12 +87,25 @@ struct AntiBaguCaptureApp {
             token: token,
             permissions: permissions
         )
+        let _ = await MainActor.run {
+            NSApplication.shared.setActivationPolicy(.accessory)
+        }
+        let screenshotHotKey = GlobalScreenshotHotKey {
+            Task { await client.captureScreenshot() }
+        }
+        do {
+            try screenshotHotKey.register()
+        } catch {
+            CLIOutput.warning("Screenshot shortcut unavailable: \(error)")
+        }
+        defer { screenshotHotKey.unregister() }
         let runner = Task {
             while !Task.isCancelled {
                 do {
                     try await client.run()
                 } catch {
                     if Task.isCancelled { return }
+                    CLIOutput.taskState(.reconnecting)
                     CLIOutput.warning("Control channel disconnected; retrying in 1 second. \(error)")
                     try? await Task.sleep(for: .seconds(1))
                 }
@@ -100,6 +113,7 @@ struct AntiBaguCaptureApp {
         }
         CLIOutput.section("Agent")
         CLIOutput.success("Ready and waiting for an interview.")
+        CLIOutput.row("Screenshot", "Option+Space")
         CLIOutput.detail("Press Ctrl+C to stop.")
         await waitForInterrupt()
         runner.cancel()

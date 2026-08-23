@@ -24,8 +24,10 @@ from anti_bagu.interview.events import Channel, RealtimeEvent, TranscriptEvent
 from anti_bagu.llm.deepseek import (
     FOCUS_SYSTEM_PROMPT,
     DeepSeekFocusResponder,
+    DeepSeekScreenshotAnalyzer,
     DeepSeekThinkingAnswerer,
     UnavailableFocusResponder,
+    UnavailableScreenshotAnalyzer,
     UnavailableThinkingAnswerer,
 )
 from anti_bagu.mobile.hub import MobileHub
@@ -87,9 +89,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             active_settings.deepseek_base_url,
             active_settings.deepseek_model,
         )
+        screenshot_analyzer = DeepSeekScreenshotAnalyzer(
+            active_settings.deepseek_api_key,
+            active_settings.deepseek_base_url,
+            active_settings.deepseek_model,
+        )
     else:
         focus_responder = UnavailableFocusResponder()
         thinking_answerer = UnavailableThinkingAnswerer()
+        screenshot_analyzer = UnavailableScreenshotAnalyzer()
 
     prompt_builder = FocusPromptBuilder(
         system_prompt=FOCUS_SYSTEM_PROMPT,
@@ -101,12 +109,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     coordinator = InterviewCoordinator(
         focus_responder,
         thinking_answerer,
+        screenshot_analyzer,
         event_hub,
         prompt_builder,
         session_id=session_id,
         debounce_seconds=active_settings.focus_debounce_ms / 1000,
         max_coalesce_seconds=active_settings.focus_max_coalesce_ms / 1000,
         focus_timeout_seconds=active_settings.focus_timeout_seconds,
+        screenshot_timeout_seconds=active_settings.screenshot_focus_timeout_seconds,
     )
 
     @asynccontextmanager

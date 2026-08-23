@@ -11,8 +11,10 @@ from anti_bagu.interview.coordinator import InterviewCoordinator
 from anti_bagu.llm.deepseek import (
     FOCUS_SYSTEM_PROMPT,
     DeepSeekFocusResponder,
+    DeepSeekScreenshotAnalyzer,
     DeepSeekThinkingAnswerer,
     UnavailableFocusResponder,
+    UnavailableScreenshotAnalyzer,
     UnavailableThinkingAnswerer,
 )
 from anti_bagu.persistence.task_events import TaskEventRecorder
@@ -34,6 +36,7 @@ class TaskRuntime:
         self.dashscope_api_key: str | None = None
         self._focus_responder = UnavailableFocusResponder()
         self._thinking_answerer = UnavailableThinkingAnswerer()
+        self._screenshot_analyzer = UnavailableScreenshotAnalyzer()
         self.coordinator = self._new_coordinator()
 
     @property
@@ -52,6 +55,11 @@ class TaskRuntime:
             self.settings.deepseek_model,
         )
         self._thinking_answerer = DeepSeekThinkingAnswerer(
+            deepseek_api_key,
+            self.settings.deepseek_base_url,
+            self.settings.deepseek_model,
+        )
+        self._screenshot_analyzer = DeepSeekScreenshotAnalyzer(
             deepseek_api_key,
             self.settings.deepseek_base_url,
             self.settings.deepseek_model,
@@ -75,16 +83,22 @@ class TaskRuntime:
         return InterviewCoordinator(
             self._focus_responder,
             self._thinking_answerer,
+            self._screenshot_analyzer,
             self.event_hub,
             prompt_builder,
             session_id=self.task_id,
             debounce_seconds=self.settings.focus_debounce_ms / 1000,
             max_coalesce_seconds=self.settings.focus_max_coalesce_ms / 1000,
             focus_timeout_seconds=self.settings.focus_timeout_seconds,
+            screenshot_timeout_seconds=self.settings.screenshot_focus_timeout_seconds,
         )
 
     async def _close_models(self) -> None:
-        for model in (self._focus_responder, self._thinking_answerer):
+        for model in (
+            self._focus_responder,
+            self._thinking_answerer,
+            self._screenshot_analyzer,
+        ):
             close = getattr(model, "close", None)
             if close is not None:
                 await close()

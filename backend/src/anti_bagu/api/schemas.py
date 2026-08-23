@@ -66,6 +66,8 @@ class TaskView(BaseModel):
     updated_at: datetime
     started_at: datetime | None
     ended_at: datetime | None
+    deleted_at: datetime | None
+    deleted_by_id: str | None
 
 
 class PreflightCheck(BaseModel):

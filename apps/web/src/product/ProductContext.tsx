@@ -22,6 +22,8 @@ interface ApiTask {
   name: string
   mode: 'interview' | 'practice'
   mobile_required: boolean
+  deleted_at: string | null
+  deleted_by_id: string | null
   status: TaskStatus
   created_at: string
 }
@@ -45,6 +47,7 @@ interface ProductContextValue {
   refreshTasks: () => Promise<void>
   createTask: (name: string) => Promise<string>
   renameTask: (taskId: string, name: string) => Promise<void>
+  deleteTask: (taskId: string) => Promise<void>
   updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>
   preflightTask: (taskId: string) => Promise<{ ready: boolean; checks: PreflightCheck[] }>
   getPreflight: (taskId: string) => Promise<{ ready: boolean; checks: PreflightCheck[] }>
@@ -69,6 +72,7 @@ function mapTask(task: ApiTask): InterviewTask {
     status: task.status,
     mode: task.mode,
     mobileRequired: task.mobile_required,
+    deletedAt: task.deleted_at,
   }
 }
 
@@ -115,6 +119,10 @@ export function ProductProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ name }),
       }, session?.token)
       setTasks((current) => current.map((item) => item.id === taskId ? mapTask(task) : item))
+    },
+    async deleteTask(taskId) {
+      await apiRequest<ApiTask>(`/tasks/${taskId}`, { method: 'DELETE' }, session?.token)
+      setTasks((current) => current.filter((item) => item.id !== taskId))
     },
     async updateTaskStatus(taskId, status) {
       const currentStatus = tasks.find((task) => task.id === taskId)?.status

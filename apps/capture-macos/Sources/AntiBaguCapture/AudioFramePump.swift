@@ -21,10 +21,17 @@ final class AudioFramePump: @unchecked Sendable {
         guard worker == nil else { return }
         worker = Task { [stream, socket, label] in
             for await packet in stream {
+                if Task.isCancelled { return }
                 do {
                     try await socket.send(packet: packet)
+                } catch AudioTransportError.reconnecting {
+                    continue
+                } catch AudioTransportError.closed {
+                    return
+                } catch is CancellationError {
+                    return
                 } catch {
-                    CLIOutput.error("\(label) transport unavailable after retries: \(error)")
+                    CLIOutput.warning("\(label) frame dropped while the channel reconnects: \(error)")
                 }
             }
         }
@@ -35,6 +42,7 @@ final class AudioFramePump: @unchecked Sendable {
     }
 
     func stop() async {
+        worker?.cancel()
         continuation.finish()
         await worker?.value
         worker = nil

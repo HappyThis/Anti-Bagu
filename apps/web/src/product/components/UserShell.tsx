@@ -29,7 +29,7 @@ export function UserShell() {
       <div className="product-body">
         <aside className="task-sidebar">
           <button className="brand-button sidebar-brand" type="button" onClick={() => navigate('/tasks')}>
-            Anti-Bagu
+            <img src="/brand/anti-bagu-logo.png" alt="" /><span>Anti-Bagu</span>
           </button>
           <nav className="user-nav" aria-label="用户功能">
             <NavLink to="/tasks"><PlayCircle size={21} />开始面试</NavLink>

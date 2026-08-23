@@ -82,7 +82,7 @@ export function AgentAuthorizePage() {
 
   return (
     <main className="agent-auth-page">
-      <a className="agent-auth-brand" href="/">Anti-Bagu</a>
+      <a className="agent-auth-brand" href="/"><img src="/brand/anti-bagu-logo.png" alt="" />Anti-Bagu</a>
       <section className="agent-auth-card">
         <span className="agent-auth-icon"><Desktop size={30} weight="duotone" /></span>
         <span className="agent-auth-eyebrow">电脑助手登录</span>
@@ -133,7 +133,7 @@ function AuthorizationResult({
 }) {
   return (
     <main className="agent-auth-page">
-      <a className="agent-auth-brand" href="/">Anti-Bagu</a>
+      <a className="agent-auth-brand" href="/"><img src="/brand/anti-bagu-logo.png" alt="" />Anti-Bagu</a>
       <section className={`agent-auth-card agent-auth-result agent-auth-result--${tone}`}>
         <span className="agent-auth-result-icon">{icon}</span>
         <h1>{title}</h1>

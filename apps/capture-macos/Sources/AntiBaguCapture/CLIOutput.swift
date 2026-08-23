@@ -1,6 +1,14 @@
 import Darwin
 import Foundation
 
+enum CLITaskState: String {
+    case idle = "IDLE"
+    case running = "RUNNING"
+    case paused = "PAUSED"
+    case completed = "COMPLETED"
+    case reconnecting = "RECONNECTING"
+}
+
 enum CLIOutput {
     private enum Color: String {
         case reset = "\u{001B}[0m"
@@ -18,6 +26,10 @@ enum CLIOutput {
               ProcessInfo.processInfo.environment["TERM"] != "dumb"
         else { return false }
         return isatty(STDOUT_FILENO) == 1
+    }
+
+    static var dynamicOutputEnabled: Bool {
+        colorEnabled
     }
 
     static func banner() {
@@ -62,13 +74,72 @@ enum CLIOutput {
         write("       \(styled(message, .dim))")
     }
 
+    static func taskState(_ state: CLITaskState, taskID: String? = nil) {
+        let color: Color = switch state {
+        case .idle: .cyan
+        case .running: .green
+        case .paused, .reconnecting: .yellow
+        case .completed: .blue
+        }
+        let suffix = taskID.map { "  \(styled(String($0.prefix(8)), .dim))" } ?? ""
+        write("\(styled("[TASK]", .bold, color)) \(styled(state.rawValue, .bold, color))\(suffix)")
+    }
+
+    static func signal(interview: AudioSignalLevel, microphone: AudioSignalLevel) {
+        guard dynamicOutputEnabled else { return }
+        let line = "\(styled("[SIGNAL]", .bold, .cyan)) "
+            + meter(label: "Interview", level: interview)
+            + "   "
+            + meter(label: "Microphone", level: microphone)
+        writeLive(line)
+    }
+
+    static func finishSignal() {
+        guard dynamicOutputEnabled else { return }
+        flockfile(stdout)
+        defer { funlockfile(stdout) }
+        fputs("\r\u{001B}[2K", stdout)
+        fflush(stdout)
+    }
+
+    private static func meter(label: String, level: AudioSignalLevel) -> String {
+        let width = 12
+        let filledCount = min(width, max(0, Int((level.normalized * Double(width)).rounded())))
+        let filled = String(repeating: "█", count: filledCount)
+        let empty = String(repeating: "░", count: width - filledCount)
+        let color: Color
+        if level.peak >= 0.95 {
+            color = .red
+        } else if level.normalized >= 0.72 {
+            color = .yellow
+        } else if level.normalized <= 0.08 {
+            color = .dim
+        } else {
+            color = .green
+        }
+        let db = String(format: "%5.1f dB", level.decibels)
+        return "\(styled(label.padding(toLength: 10, withPad: " ", startingAt: 0), .dim)) \(styled(filled, color))\(styled(empty, .dim)) \(styled(db, color))"
+    }
+
     private static func styled(_ value: String, _ colors: Color...) -> String {
         guard colorEnabled else { return value }
         return colors.map(\.rawValue).joined() + value + Color.reset.rawValue
     }
 
     private static func write(_ value: String, to stream: UnsafeMutablePointer<FILE> = stdout) {
+        flockfile(stream)
+        defer { funlockfile(stream) }
+        if isatty(fileno(stream)) == 1 {
+            fputs("\r\u{001B}[2K", stream)
+        }
         fputs(value + "\n", stream)
         fflush(stream)
+    }
+
+    private static func writeLive(_ value: String) {
+        flockfile(stdout)
+        defer { funlockfile(stdout) }
+        fputs("\r\u{001B}[2K" + value, stdout)
+        fflush(stdout)
     }
 }

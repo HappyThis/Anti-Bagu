@@ -5,7 +5,9 @@ from anti_bagu.interview.events import (
     AnswerStatus,
     Channel,
     CommittedFocus,
+    ContentKind,
     ConversationTurn,
+    FocusSource,
     TranscriptEvent,
 )
 
@@ -62,12 +64,24 @@ class ConversationStore:
         recommended_answer: str,
         answer_status: AnswerStatus,
         source_end_turn_id: int,
+        code: str = "",
+        language: str = "",
+        complexity: str = "",
+        content_kind: ContentKind = ContentKind.KNOWLEDGE,
+        source: FocusSource = FocusSource.VOICE,
+        screenshot_id: str = "",
     ) -> CommittedFocus:
         previous_end = self._focuses[-1].source_end_turn_id if self._focuses else 0
         focus = CommittedFocus(
             question=question.strip(),
             answer_mode=answer_mode,
             recommended_answer=recommended_answer.strip(),
+            code=code.strip(),
+            language=language.strip(),
+            complexity=complexity.strip(),
+            content_kind=content_kind,
+            source=source,
+            screenshot_id=screenshot_id,
             answer_status=answer_status,
             source_start_turn_id=min(previous_end + 1, source_end_turn_id),
             source_end_turn_id=source_end_turn_id,
