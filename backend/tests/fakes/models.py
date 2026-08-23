@@ -70,7 +70,7 @@ class FakeScreenshotAnalyzer:
         self.result = result
         self.calls: list[dict[str, object]] = []
 
-    async def analyze(self, **kwargs) -> ModelResult:
+    async def respond(self, **kwargs) -> ModelResult:
         self.calls.append(kwargs)
         return self.result
 
@@ -82,7 +82,7 @@ class BlockingScreenshotAnalyzer(FakeScreenshotAnalyzer):
         self.release = asyncio.Event()
         self.cancelled = False
 
-    async def analyze(self, **kwargs) -> ModelResult:
+    async def respond(self, **kwargs) -> ModelResult:
         self.calls.append(kwargs)
         self.started.set()
         try:
@@ -91,3 +91,13 @@ class BlockingScreenshotAnalyzer(FakeScreenshotAnalyzer):
             self.cancelled = True
             raise
         return self.result
+
+
+class RoutedInterviewResponder:
+    def __init__(self, voice, screenshot) -> None:
+        self.voice = voice
+        self.screenshot = screenshot
+
+    async def respond(self, **kwargs) -> ModelResult:
+        target = self.screenshot if kwargs.get("image_data") is not None else self.voice
+        return await target.respond(**kwargs)

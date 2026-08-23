@@ -18,7 +18,7 @@ from anti_bagu.interview.events import (
 )
 from anti_bagu.interview.sink import EventSink
 from anti_bagu.interview.state import SessionState
-from anti_bagu.llm.base import FocusResponder, ScreenshotAnalyzer
+from anti_bagu.llm.base import InterviewResponder
 
 ScreenshotStatusHandler = Callable[[dict[str, object]], Awaitable[None]]
 
@@ -26,8 +26,7 @@ ScreenshotStatusHandler = Callable[[dict[str, object]], Awaitable[None]]
 class InterviewCoordinator:
     def __init__(
         self,
-        focus_responder: FocusResponder,
-        screenshot_analyzer: ScreenshotAnalyzer,
+        responder: InterviewResponder,
         sink: EventSink,
         prompt_builder: FocusPromptBuilder,
         *,
@@ -40,8 +39,7 @@ class InterviewCoordinator:
         self.session_id = session_id or str(uuid.uuid4())
         self.store = ConversationStore()
         self.state = SessionState.LISTENING
-        self._focus_responder = focus_responder
-        self._screenshot_analyzer = screenshot_analyzer
+        self._responder = responder
         self._sink = sink
         self._prompt_builder = prompt_builder
         self._debounce_seconds = debounce_seconds
@@ -377,7 +375,7 @@ class InterviewCoordinator:
         model_started_at = time.time()
         try:
             result = await asyncio.wait_for(
-                self._focus_responder.respond(prompt=prompt.markdown),
+                self._responder.respond(prompt=prompt.markdown),
                 timeout=self._focus_timeout_seconds,
             )
             duration_ms = max(0.0, (time.time() - model_started_at) * 1000)
@@ -508,7 +506,7 @@ class InterviewCoordinator:
         outcome = "completed"
         try:
             result = await asyncio.wait_for(
-                self._screenshot_analyzer.analyze(
+                self._responder.respond(
                     prompt=prompt.markdown,
                     image_data=image_data,
                     mime_type=mime_type,

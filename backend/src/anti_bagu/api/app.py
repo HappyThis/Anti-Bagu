@@ -22,12 +22,10 @@ from anti_bagu.interview.context import FocusPromptBuilder, TokenEstimator
 from anti_bagu.interview.coordinator import InterviewCoordinator
 from anti_bagu.interview.events import Channel, RealtimeEvent, TranscriptEvent
 from anti_bagu.llm.deepseek import (
-    FOCUS_SYSTEM_PROMPT,
-    DeepSeekFocusResponder,
-    DeepSeekScreenshotAnalyzer,
-    UnavailableFocusResponder,
-    UnavailableScreenshotAnalyzer,
+    DeepSeekInterviewResponder,
+    UnavailableInterviewResponder,
 )
+from anti_bagu.llm.prompts import INTERVIEW_SYSTEM_PROMPT
 from anti_bagu.mobile.hub import MobileHub
 from anti_bagu.persistence.database import create_database, create_schema
 from anti_bagu.realtime.runtime import RuntimeRegistry
@@ -77,30 +75,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     if active_settings.deepseek_api_key:
-        focus_responder = DeepSeekFocusResponder(
-            active_settings.deepseek_api_key,
-            active_settings.deepseek_base_url,
-            active_settings.deepseek_model,
-        )
-        screenshot_analyzer = DeepSeekScreenshotAnalyzer(
+        responder = DeepSeekInterviewResponder(
             active_settings.deepseek_api_key,
             active_settings.deepseek_base_url,
             active_settings.deepseek_model,
         )
     else:
-        focus_responder = UnavailableFocusResponder()
-        screenshot_analyzer = UnavailableScreenshotAnalyzer()
+        responder = UnavailableInterviewResponder()
 
     prompt_builder = FocusPromptBuilder(
-        system_prompt=FOCUS_SYSTEM_PROMPT,
+        system_prompt=INTERVIEW_SYSTEM_PROMPT,
         target_tokens=active_settings.focus_prompt_target_tokens,
         dialogue_target_tokens=active_settings.focus_dialogue_target_tokens,
         history_target_tokens=active_settings.focus_history_target_tokens,
         estimator=TokenEstimator(active_settings.focus_characters_per_token),
     )
     coordinator = InterviewCoordinator(
-        focus_responder,
-        screenshot_analyzer,
+        responder,
         event_hub,
         prompt_builder,
         session_id=session_id,

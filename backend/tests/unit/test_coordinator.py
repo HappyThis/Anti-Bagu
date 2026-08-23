@@ -9,6 +9,7 @@ from fakes.models import (
     FakeFocusResponder,
     FakeScreenshotAnalyzer,
     PreemptibleFocusResponder,
+    RoutedInterviewResponder,
     SequencedFocusResponder,
 )
 
@@ -48,8 +49,10 @@ def coordinator(
     debounce_seconds: float = 0,
 ) -> InterviewCoordinator:
     return InterviewCoordinator(
-        responder,
-        screenshot or FakeScreenshotAnalyzer(wait_result()),
+        RoutedInterviewResponder(
+            responder,
+            screenshot or FakeScreenshotAnalyzer(wait_result()),
+        ),
         sink or MemoryEventSink(),
         FocusPromptBuilder(system_prompt="I 是面试官，C 是候选人。返回 JSON。"),
         debounce_seconds=debounce_seconds,

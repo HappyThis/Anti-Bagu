@@ -5,15 +5,11 @@ from typing import Protocol
 from anti_bagu.interview.events import ModelResult
 
 
-class FocusResponder(Protocol):
-    async def respond(self, *, prompt: str) -> ModelResult: ...
-
-
-class ScreenshotAnalyzer(Protocol):
-    async def analyze(
+class InterviewResponder(Protocol):
+    async def respond(
         self,
         *,
         prompt: str,
-        image_data: bytes,
-        mime_type: str,
+        image_data: bytes | None = None,
+        mime_type: str | None = None,
     ) -> ModelResult: ...

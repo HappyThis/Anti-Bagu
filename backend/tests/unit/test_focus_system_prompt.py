@@ -1,26 +1,20 @@
-from anti_bagu.llm.deepseek import FOCUS_SYSTEM_PROMPT
+from anti_bagu.llm.prompts import INTERVIEW_SYSTEM_PROMPT
 
 
-def test_focus_prompt_prioritizes_latest_interviewer_topic_switch() -> None:
-    assert "始终优先检查时间上最新的 I 发言" in FOCUS_SYSTEM_PROMPT
-    assert "切换了技术名词、考察对象或话题" in FOCUS_SYSTEM_PROMPT
-    assert "必须只回答新话题" in FOCUS_SYSTEM_PROMPT
+def test_single_prompt_prioritizes_latest_interviewer_question() -> None:
+    assert "始终优先处理最新的 I 发言" in INTERVIEW_SYSTEM_PROMPT
+    assert "只回答新问题" in INTERVIEW_SYSTEM_PROMPT
+    assert "历史 Q/A 只用于理解上下文" in INTERVIEW_SYSTEM_PROMPT
 
 
-def test_focus_prompt_treats_colloquial_interview_checks_as_questions() -> None:
-    for phrase in ("了解 XXX", "知道 XXX 吗", "用过 XXX 吗", "熟悉 XXX 吗"):
-        assert phrase in FOCUS_SYSTEM_PROMPT
-    assert "不确定是新问题还是普通陈述时，优先返回 answer" in FOCUS_SYSTEM_PROMPT
+def test_single_prompt_handles_text_and_screenshot_coding() -> None:
+    assert "输入可能包含截图" in INTERVIEW_SYSTEM_PROMPT
+    assert "截图与语音使用相同的回答规则" in INTERVIEW_SYSTEM_PROMPT
+    assert "算法题必须返回完整 code" in INTERVIEW_SYSTEM_PROMPT
+    assert "默认使用 Python" in INTERVIEW_SYSTEM_PROMPT
 
 
-def test_focus_prompt_forbids_cross_topic_question_fusion() -> None:
-    assert "最小相关上下文" in FOCUS_SYSTEM_PROMPT
-    assert "视为话题硬边界" in FOCUS_SYSTEM_PROMPT
-    assert "禁止把已经结束的旧问题拼入 question 或 answer" in FOCUS_SYSTEM_PROMPT
-
-
-def test_answer_prompt_requires_scan_friendly_short_lines() -> None:
-    assert "适合候选人在 3 秒内扫读" in FOCUS_SYSTEM_PROMPT
-    assert "总共 3–5 行" in FOCUS_SYSTEM_PROMPT
-    assert "第一行以“核心：”直接给结论" in FOCUS_SYSTEM_PROMPT
-    assert "禁止写成长段" in FOCUS_SYSTEM_PROMPT
+def test_single_prompt_only_allows_wait_or_answer_json() -> None:
+    assert '{"type":"wait"}' in INTERVIEW_SYSTEM_PROMPT
+    assert '"type":"answer"' in INTERVIEW_SYSTEM_PROMPT
+    assert "每次只能返回一个合法 JSON 对象" in INTERVIEW_SYSTEM_PROMPT

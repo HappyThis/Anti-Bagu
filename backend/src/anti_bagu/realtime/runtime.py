@@ -9,12 +9,10 @@ from anti_bagu.config import Settings
 from anti_bagu.interview.context import FocusPromptBuilder, TokenEstimator
 from anti_bagu.interview.coordinator import InterviewCoordinator
 from anti_bagu.llm.deepseek import (
-    FOCUS_SYSTEM_PROMPT,
-    DeepSeekFocusResponder,
-    DeepSeekScreenshotAnalyzer,
-    UnavailableFocusResponder,
-    UnavailableScreenshotAnalyzer,
+    DeepSeekInterviewResponder,
+    UnavailableInterviewResponder,
 )
+from anti_bagu.llm.prompts import INTERVIEW_SYSTEM_PROMPT
 from anti_bagu.persistence.task_events import TaskEventRecorder
 from anti_bagu.telemetry.audit import DailyJsonlAudit
 
@@ -32,26 +30,20 @@ class TaskRuntime:
         self.event_hub = event_hub
         self.recorder = recorder
         self.dashscope_api_key: str | None = None
-        self._focus_responder = UnavailableFocusResponder()
-        self._screenshot_analyzer = UnavailableScreenshotAnalyzer()
+        self._responder = UnavailableInterviewResponder()
         self.coordinator = self._new_coordinator()
 
     @property
     def configured(self) -> bool:
         return bool(self.dashscope_api_key) and isinstance(
-            self._focus_responder, DeepSeekFocusResponder
+            self._responder, DeepSeekInterviewResponder
         )
 
     async def configure(self, *, dashscope_api_key: str, deepseek_api_key: str) -> None:
         await self.coordinator.close()
         await self._close_models()
         self.dashscope_api_key = dashscope_api_key
-        self._focus_responder = DeepSeekFocusResponder(
-            deepseek_api_key,
-            self.settings.deepseek_base_url,
-            self.settings.deepseek_model,
-        )
-        self._screenshot_analyzer = DeepSeekScreenshotAnalyzer(
+        self._responder = DeepSeekInterviewResponder(
             deepseek_api_key,
             self.settings.deepseek_base_url,
             self.settings.deepseek_model,
@@ -66,15 +58,14 @@ class TaskRuntime:
 
     def _new_coordinator(self) -> InterviewCoordinator:
         prompt_builder = FocusPromptBuilder(
-            system_prompt=FOCUS_SYSTEM_PROMPT,
+            system_prompt=INTERVIEW_SYSTEM_PROMPT,
             target_tokens=self.settings.focus_prompt_target_tokens,
             dialogue_target_tokens=self.settings.focus_dialogue_target_tokens,
             history_target_tokens=self.settings.focus_history_target_tokens,
             estimator=TokenEstimator(self.settings.focus_characters_per_token),
         )
         return InterviewCoordinator(
-            self._focus_responder,
-            self._screenshot_analyzer,
+            self._responder,
             self.event_hub,
             prompt_builder,
             session_id=self.task_id,
@@ -85,13 +76,9 @@ class TaskRuntime:
         )
 
     async def _close_models(self) -> None:
-        for model in (
-            self._focus_responder,
-            self._screenshot_analyzer,
-        ):
-            close = getattr(model, "close", None)
-            if close is not None:
-                await close()
+        close = getattr(self._responder, "close", None)
+        if close is not None:
+            await close()
 
 
 class RuntimeRegistry:
