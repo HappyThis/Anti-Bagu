@@ -77,12 +77,12 @@ const DesktopAnswerCard = memo(function DesktopAnswerCard({ card }: { card: Answ
           <div className="answer-content-heading">
             <span>{hasCode ? '解题思路' : '建议回答'}</span>
             {card.source === 'SCREENSHOT' ? <em>截图识别</em> : null}
-            {card.generating ? <em>生成中</em> : card.cancelled ? <em>已切换问题</em> : card.mode ? <em>已准备</em> : null}
+            {card.generating ? <em>生成中</em> : card.cancelled ? <em>已切换问题</em> : card.answer ? <em>已准备</em> : null}
           </div>
-          {hasCode ? <div className="answer-pane-tabs" role="tablist" aria-label="解题内容"><button className={pane === 'answer' ? 'active' : ''} type="button" role="tab" aria-selected={pane === 'answer'} onClick={() => setPane('answer')}>解题思路</button><button className={pane === 'code' ? 'active' : ''} type="button" role="tab" aria-selected={pane === 'code'} onClick={() => setPane('code')}>{card.language || 'Python'} 代码</button></div> : null}
+          {hasCode ? <div className="answer-pane-tabs" role="tablist" aria-label="解题内容"><button className={pane === 'answer' ? 'active' : ''} type="button" role="tab" aria-selected={pane === 'answer'} onClick={() => setPane('answer')}>解题思路</button><button className={pane === 'code' ? 'active' : ''} type="button" role="tab" aria-selected={pane === 'code'} onClick={() => setPane('code')}>Python 代码</button></div> : null}
         </header>
         {card.error ? <p className="error-copy">{card.error}</p> : null}
-        {pane === 'code' && hasCode ? <div className="answer-code-pane"><pre><code>{card.code}</code></pre>{card.complexity ? <p>{card.complexity}</p> : null}</div> : <p className={card.answer ? '' : 'answer-placeholder'}>{card.answer || (card.generating ? '正在生成建议回答…' : '建议回答准备中…')}{card.generating ? <i className="cursor" /> : null}</p>}
+        {pane === 'code' && hasCode ? <div className="answer-code-pane"><pre><code>{card.code}</code></pre></div> : <p className={card.answer ? '' : 'answer-placeholder'}>{card.answer || (card.generating ? '正在生成建议回答…' : '建议回答准备中…')}{card.generating ? <i className="cursor" /> : null}</p>}
       </div>
     </article>
   )

@@ -3,6 +3,8 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { applyAnswerEvent, type AnswerCard } from '../../features/answer/answerCards'
+import { ScreenshotStatusBadge } from '../../features/session/ScreenshotStatusBadge'
+import { applyScreenshotEvent, EMPTY_SCREENSHOT_STATE } from '../../features/session/screenshotState'
 import { websocketUrl } from '../../shared/api'
 import type { RealtimeEvent } from '../../shared/protocol'
 
@@ -14,6 +16,7 @@ export function MobileCompanionPage() {
   const browsingHistory = useRef(false)
   const [connection, setConnection] = useState<'connecting' | 'connected' | 'expired'>('connecting')
   const [cards, setCards] = useState<AnswerCard[]>([])
+  const [screenshot, setScreenshot] = useState(EMPTY_SCREENSHOT_STATE)
   const [hasNewAnswer, setHasNewAnswer] = useState(false)
 
   useEffect(() => {
@@ -25,6 +28,7 @@ export function MobileCompanionPage() {
     socket.addEventListener('message', (message) => {
       const event = JSON.parse(message.data) as RealtimeEvent
       setCards((current) => applyAnswerEvent(current, event))
+      setScreenshot((current) => applyScreenshotEvent(current, event))
     })
     return () => socket.close()
   }, [pairingToken])
@@ -62,7 +66,7 @@ export function MobileCompanionPage() {
     <main className="mobile-companion-page mobile-companion-page--answers">
       <header>
         <span className="mobile-brand"><img src="/brand/anti-bagu-logo.png" alt="" />Anti-Bagu</span>
-        <span className={`mobile-live-state mobile-live-state--${connection}`}><i />{connection === 'connected' ? '已连接' : '正在连接'}</span>
+        {screenshot.status !== 'idle' ? <ScreenshotStatusBadge compact state={screenshot} /> : <span className={`mobile-live-state mobile-live-state--${connection}`}><i />{connection === 'connected' ? '已连接' : '正在连接'}</span>}
       </header>
       {hasNewAnswer ? <button className="mobile-new-answer" type="button" onClick={() => { browsingHistory.current = false; feedRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); setHasNewAnswer(false) }}><Bell size={15} weight="fill" />有新回答</button> : null}
       <div className="mobile-answer-feed" ref={feedRef} onScroll={() => { const browsing = (feedRef.current?.scrollTop ?? 0) > 40; browsingHistory.current = browsing; if (!browsing) setHasNewAnswer(false) }}>
@@ -109,8 +113,8 @@ function MobileCardContent({ card }: { card: AnswerCard }) {
           <AutoFitAnswer text={card.answer || '正在整理解题思路…'} generating={card.generating} />
         </section>
         <section className="mobile-code-block mobile-card-pane">
-          <span>{card.language || 'Python'} 代码</span>
-          <AutoFitCode code={card.code} complexity={card.complexity} />
+          <span>Python 代码</span>
+          <AutoFitCode code={card.code} />
         </section>
       </div>
       <div className="mobile-pane-indicator" aria-label={pane === 0 ? '当前显示解题思路，向左滑查看代码' : '当前显示代码，向右滑查看解题思路'}><i className={pane === 0 ? 'active' : ''} /><i className={pane === 1 ? 'active' : ''} /><span>{pane === 0 ? '左滑看代码' : '右滑看思路'}</span></div>
@@ -144,7 +148,7 @@ function AutoFitAnswer({ text, generating }: { text: string; generating: boolean
   return <p className="mobile-answer-copy" ref={copyRef}>{text}{generating ? <i className="cursor" /> : null}</p>
 }
 
-function AutoFitCode({ code, complexity }: { code: string; complexity: string }) {
+function AutoFitCode({ code }: { code: string }) {
   const codeRef = useRef<HTMLElement>(null)
 
   useLayoutEffect(() => {
@@ -165,7 +169,7 @@ function AutoFitCode({ code, complexity }: { code: string; complexity: string })
       window.cancelAnimationFrame(frame)
       observer.disconnect()
     }
-  }, [code, complexity])
+  }, [code])
 
-  return <div className="mobile-code-copy"><code ref={codeRef}>{code}</code>{complexity ? <small>{complexity}</small> : null}</div>
+  return <div className="mobile-code-copy"><code ref={codeRef}>{code}</code></div>
 }

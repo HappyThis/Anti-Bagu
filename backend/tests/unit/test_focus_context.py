@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from anti_bagu.interview.context import FocusPromptBuilder, TokenEstimator
 from anti_bagu.interview.events import (
-    AnswerMode,
-    AnswerStatus,
     Channel,
     CommittedFocus,
     ConversationTurn,
@@ -37,9 +35,7 @@ def focus(
     return CommittedFocus(
         focus_id=f"focus-{index}",
         question=question,
-        answer_mode=AnswerMode.FAST,
         recommended_answer=answer,
-        answer_status=AnswerStatus.COMPLETED,
         source_start_turn_id=max(1, source_end_turn_id - 1),
         source_end_turn_id=source_end_turn_id,
         created_at=float(index),

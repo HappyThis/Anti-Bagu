@@ -3,10 +3,9 @@ from pydantic import ValidationError
 
 from anti_bagu.audio.protocol import AudioFramePacket, AudioMetadata, pcm_level
 from anti_bagu.interview.events import (
-    AnswerMode,
-    ContentKind,
-    FocusAction,
-    FocusResult,
+    AnswerResult,
+    WaitResult,
+    parse_model_result_json,
 )
 
 
@@ -28,32 +27,24 @@ def test_pcm_level_reports_silence() -> None:
     assert pcm_level(bytes(3200)) == (0.0, 0.0)
 
 
-def test_wait_protocol_rejects_answer() -> None:
-    with pytest.raises(ValidationError):
-        FocusResult(
-            action=FocusAction.WAIT,
-            answer_mode=AnswerMode.NONE,
-            answer="不应出现",
-        )
+def test_wait_result_is_canonicalized() -> None:
+    result = parse_model_result_json(
+        '{"type":"wait","language":"python","answer":"ignored"}'
+    )
+
+    assert result == WaitResult(type="wait")
+    assert result.model_dump() == {"type": "wait"}
 
 
-def test_fast_coding_result_requires_code_and_defaults_to_python() -> None:
-    result = FocusResult(
-        action=FocusAction.RESPOND,
-        answer_mode=AnswerMode.FAST,
-        focus_question="实现两数之和",
+def test_answer_result_always_requires_question_and_answer() -> None:
+    result = AnswerResult(
+        type="answer",
+        question="实现两数之和",
         answer="使用哈希表。",
-        content_kind=ContentKind.CODING,
         code="def two_sum(nums, target): return []",
     )
 
-    assert result.language == "python"
+    assert result.code is not None
 
     with pytest.raises(ValidationError):
-        FocusResult(
-            action=FocusAction.RESPOND,
-            answer_mode=AnswerMode.FAST,
-            focus_question="实现两数之和",
-            answer="使用哈希表。",
-            content_kind=ContentKind.CODING,
-        )
+        AnswerResult(type="answer", question="实现两数之和", answer="")

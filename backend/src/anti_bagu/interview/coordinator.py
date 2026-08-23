@@ -3,29 +3,30 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 
 from anti_bagu.interview.context import FocusPromptBuilder, FocusPromptBuildResult
 from anti_bagu.interview.conversation import ConversationStore
 from anti_bagu.interview.events import (
-    AnswerMode,
-    AnswerStatus,
+    AnswerResult,
     Channel,
-    FocusAction,
     FocusSource,
     RealtimeEvent,
     TranscriptEvent,
     TranscriptPhase,
+    WaitResult,
 )
 from anti_bagu.interview.sink import EventSink
 from anti_bagu.interview.state import SessionState
-from anti_bagu.llm.base import FocusResponder, ScreenshotAnalyzer, ThinkingAnswerer
+from anti_bagu.llm.base import FocusResponder, ScreenshotAnalyzer
+
+ScreenshotStatusHandler = Callable[[dict[str, object]], Awaitable[None]]
 
 
 class InterviewCoordinator:
     def __init__(
         self,
         focus_responder: FocusResponder,
-        thinking_answerer: ThinkingAnswerer,
         screenshot_analyzer: ScreenshotAnalyzer,
         sink: EventSink,
         prompt_builder: FocusPromptBuilder,
@@ -34,13 +35,12 @@ class InterviewCoordinator:
         debounce_seconds: float = 0.3,
         max_coalesce_seconds: float = 1.2,
         focus_timeout_seconds: float = 5.0,
-        screenshot_timeout_seconds: float = 30.0,
+        screenshot_timeout_seconds: float = 60.0,
     ) -> None:
         self.session_id = session_id or str(uuid.uuid4())
         self.store = ConversationStore()
         self.state = SessionState.LISTENING
         self._focus_responder = focus_responder
-        self._thinking_answerer = thinking_answerer
         self._screenshot_analyzer = screenshot_analyzer
         self._sink = sink
         self._prompt_builder = prompt_builder
@@ -52,7 +52,6 @@ class InterviewCoordinator:
         self._seen_final_events: set[str] = set()
         self._debounce_task: asyncio.Task[None] | None = None
         self._focus_task: asyncio.Task[None] | None = None
-        self._answer_task: asyncio.Task[None] | None = None
         self._screenshot_task: asyncio.Task[None] | None = None
         self._focus_generation = 0
         self._last_started_turn_id = 0
@@ -65,10 +64,8 @@ class InterviewCoordinator:
 
     @property
     def model_task_active(self) -> bool:
-        return (
-            self._task_active(self._focus_task)
-            or self._task_active(self._answer_task)
-            or self._task_active(self._screenshot_task)
+        return self._task_active(self._focus_task) or self._task_active(
+            self._screenshot_task
         )
 
     @property
@@ -122,7 +119,7 @@ class InterviewCoordinator:
         if self._screenshot_focus_active:
             self._pending_voice_focus = True
             await self._emit(
-                "focus.deferred",
+                "focus.blocked",
                 {
                     "reason": "screenshot_focus_active",
                     "latest_turn_id": self.store.latest_turn_id,
@@ -138,6 +135,7 @@ class InterviewCoordinator:
         image_data: bytes,
         mime_type: str,
         storage_path: str,
+        status_handler: ScreenshotStatusHandler | None = None,
     ) -> bool:
         if self._screenshot_focus_active:
             await self._emit(
@@ -153,7 +151,6 @@ class InterviewCoordinator:
         self._coalesce_started_at = None
         self._last_interviewer_activity_at = None
         await self._cancel_active_focus("screenshot_focus")
-        await self._cancel_answer("screenshot_focus")
 
         prompt = self._prompt_builder.build(
             turns=self.store.turns,
@@ -207,6 +204,7 @@ class InterviewCoordinator:
                 image_data=image_data,
                 mime_type=mime_type,
                 prompt=prompt,
+                status_handler=status_handler,
             )
         )
         return True
@@ -230,7 +228,6 @@ class InterviewCoordinator:
                 for task in (
                     self._debounce_task,
                     self._focus_task,
-                    self._answer_task,
                     self._screenshot_task,
                 )
                 if self._task_active(task)
@@ -244,7 +241,6 @@ class InterviewCoordinator:
         self._closing = True
         await self._cancel_task(self._debounce_task)
         await self._cancel_task(self._focus_task)
-        await self._cancel_answer("session_closed")
         await self._cancel_task(self._screenshot_task)
         self._screenshot_task = None
         self._screenshot_focus_active = False
@@ -307,7 +303,7 @@ class InterviewCoordinator:
         if self._screenshot_focus_active:
             self._pending_voice_focus = True
             await self._emit(
-                "focus.deferred",
+                "focus.blocked",
                 {
                     "reason": "screenshot_focus_active",
                     "latest_turn_id": self.store.latest_turn_id,
@@ -402,10 +398,8 @@ class InterviewCoordinator:
                 {
                     "generation": generation,
                     "through_turn_id": prompt.through_turn_id,
-                    "action": result.action.value,
-                    "mode": result.answer_mode.value,
-                    "question": result.focus_question,
-                    "content_kind": result.content_kind.value,
+                    "result_type": result.type,
+                    "question": result.question if isinstance(result, AnswerResult) else "",
                     "duration_ms": duration_ms,
                 },
             )
@@ -414,19 +408,12 @@ class InterviewCoordinator:
                 {
                     "operation": "focus",
                     "generation": generation,
-                    "action": result.action.value,
-                    "mode": result.answer_mode.value,
-                    "question": result.focus_question,
-                    "answer": result.answer,
-                    "content_kind": result.content_kind.value,
-                    "code": result.code,
-                    "language": result.language,
-                    "complexity": result.complexity,
+                    "result": result.model_dump(mode="json"),
                     "duration_ms": duration_ms,
                 },
             )
 
-            if result.action is FocusAction.WAIT:
+            if isinstance(result, WaitResult):
                 self.state = SessionState.LISTENING
                 await self._emit(
                     "focus.wait",
@@ -438,72 +425,40 @@ class InterviewCoordinator:
                 )
                 return
 
-            await self._cancel_answer("new_focus_committed")
-            status = (
-                AnswerStatus.COMPLETED
-                if result.answer_mode is AnswerMode.FAST
-                else AnswerStatus.GENERATING
-            )
             committed = self.store.commit_focus(
-                question=result.focus_question,
-                answer_mode=result.answer_mode,
+                question=result.question,
                 recommended_answer=result.answer,
-                answer_status=status,
                 source_end_turn_id=prompt.through_turn_id,
                 code=result.code,
-                language=result.language,
-                complexity=result.complexity,
-                content_kind=result.content_kind,
             )
             await self._emit(
                 "focus.updated",
                 {
+                    "protocol_version": 2,
                     "focus_id": committed.focus_id,
                     "generation": generation,
                     "question": committed.question,
-                    "mode": committed.answer_mode.value,
                     "source": committed.source.value,
-                    "content_kind": committed.content_kind.value,
                     "has_code": bool(committed.code),
-                    "language": committed.language,
                     "source_start_turn_id": committed.source_start_turn_id,
                     "source_end_turn_id": committed.source_end_turn_id,
                 },
             )
-
-            if result.answer_mode is AnswerMode.FAST:
-                self.state = SessionState.ANSWERING_FAST
-                await self._emit_model_latency(model_started_at)
-                await self._emit(
-                    "answer.completed",
-                    {
-                        "focus_id": committed.focus_id,
-                        "question": committed.question,
-                        "answer": committed.recommended_answer,
-                        "content_kind": committed.content_kind.value,
-                        "code": committed.code,
-                        "language": committed.language,
-                        "complexity": committed.complexity,
-                        "source": committed.source.value,
-                        "mode": committed.answer_mode.value,
-                        "duration_ms": duration_ms,
-                    },
-                )
-                self.state = SessionState.LISTENING
-                return
-
-            self.state = SessionState.ANSWERING_THINK
+            self.state = SessionState.ANSWERING
+            await self._emit_model_latency(model_started_at)
             await self._emit(
-                "answer.started",
+                "answer.completed",
                 {
+                    "protocol_version": 2,
                     "focus_id": committed.focus_id,
                     "question": committed.question,
-                    "mode": committed.answer_mode.value,
+                    "answer": committed.recommended_answer,
+                    "code": committed.code,
+                    "source": committed.source.value,
+                    "duration_ms": duration_ms,
                 },
             )
-            self._answer_task = asyncio.create_task(
-                self._run_thinking_answer(committed.focus_id, committed.question)
-            )
+            self.state = SessionState.LISTENING
         except asyncio.CancelledError:
             raise
         except TimeoutError:
@@ -546,6 +501,7 @@ class InterviewCoordinator:
         image_data: bytes,
         mime_type: str,
         prompt: FocusPromptBuildResult,
+        status_handler: ScreenshotStatusHandler | None,
     ) -> None:
         current_task = asyncio.current_task()
         model_started_at = time.time()
@@ -565,12 +521,10 @@ class InterviewCoordinator:
                 {
                     "generation": generation,
                     "through_turn_id": prompt.through_turn_id,
-                    "action": result.action.value,
-                    "mode": AnswerMode.THINK.value,
+                    "result_type": result.type,
                     "source": FocusSource.SCREENSHOT.value,
                     "screenshot_id": screenshot_id,
-                    "question": result.focus_question,
-                    "content_kind": result.content_kind.value,
+                    "question": result.question if isinstance(result, AnswerResult) else "",
                     "duration_ms": duration_ms,
                 },
             )
@@ -580,17 +534,11 @@ class InterviewCoordinator:
                     "operation": "screenshot_focus",
                     "generation": generation,
                     "screenshot_id": screenshot_id,
-                    "action": result.action.value,
-                    "question": result.focus_question,
-                    "answer": result.answer,
-                    "content_kind": result.content_kind.value,
-                    "code": result.code,
-                    "language": result.language,
-                    "complexity": result.complexity,
+                    "result": result.model_dump(mode="json"),
                     "duration_ms": duration_ms,
                 },
             )
-            if result.action is FocusAction.WAIT:
+            if isinstance(result, WaitResult):
                 outcome = "no_question"
                 await self._emit(
                     "focus.wait",
@@ -605,30 +553,23 @@ class InterviewCoordinator:
                 return
 
             committed = self.store.commit_focus(
-                question=result.focus_question,
-                answer_mode=AnswerMode.THINK,
+                question=result.question,
                 recommended_answer=result.answer,
-                answer_status=AnswerStatus.COMPLETED,
                 source_end_turn_id=prompt.through_turn_id,
                 code=result.code,
-                language=result.language,
-                complexity=result.complexity,
-                content_kind=result.content_kind,
                 source=FocusSource.SCREENSHOT,
                 screenshot_id=screenshot_id,
             )
             await self._emit(
                 "focus.updated",
                 {
+                    "protocol_version": 2,
                     "focus_id": committed.focus_id,
                     "generation": generation,
                     "question": committed.question,
-                    "mode": committed.answer_mode.value,
                     "source": committed.source.value,
                     "screenshot_id": screenshot_id,
-                    "content_kind": committed.content_kind.value,
                     "has_code": bool(committed.code),
-                    "language": committed.language,
                     "source_start_turn_id": committed.source_start_turn_id,
                     "source_end_turn_id": committed.source_end_turn_id,
                 },
@@ -637,16 +578,13 @@ class InterviewCoordinator:
             await self._emit(
                 "answer.completed",
                 {
+                    "protocol_version": 2,
                     "focus_id": committed.focus_id,
                     "question": committed.question,
                     "answer": committed.recommended_answer,
-                    "content_kind": committed.content_kind.value,
                     "code": committed.code,
-                    "language": committed.language,
-                    "complexity": committed.complexity,
                     "source": committed.source.value,
                     "screenshot_id": screenshot_id,
-                    "mode": committed.answer_mode.value,
                     "duration_ms": duration_ms,
                 },
             )
@@ -684,6 +622,7 @@ class InterviewCoordinator:
                 "error", {"message": str(exc), "operation": "screenshot_focus"}
             )
         finally:
+            duration_ms = max(0.0, (time.time() - model_started_at) * 1000)
             self.state = SessionState.LISTENING
             self._screenshot_focus_active = False
             if self._screenshot_task is current_task:
@@ -694,9 +633,22 @@ class InterviewCoordinator:
                     "screenshot_id": screenshot_id,
                     "generation": generation,
                     "outcome": outcome,
+                    "duration_ms": duration_ms,
                     "pending_voice_focus": self._pending_voice_focus,
                 },
             )
+            if status_handler is not None:
+                try:
+                    await status_handler(
+                        {
+                            "type": "screenshot.status",
+                            "screenshot_id": screenshot_id,
+                            "status": outcome,
+                            "duration_ms": duration_ms,
+                        }
+                    )
+                except Exception:
+                    pass
             should_refresh = (
                 self._pending_voice_focus
                 and self.store.latest_turn_id > self._last_started_turn_id
@@ -706,87 +658,6 @@ class InterviewCoordinator:
             if should_refresh:
                 self._mark_interviewer_activity()
                 await self._schedule_focus_window()
-
-    async def _run_thinking_answer(self, focus_id: str, question: str) -> None:
-        model_started_at = time.time()
-        first_chunk = True
-        try:
-            conversation = self.store.recent_conversation_payload()
-            await self._emit(
-                "internal.llm.request",
-                {
-                    "operation": "thinking_answer",
-                    "focus_id": focus_id,
-                    "question": question,
-                    "conversation": conversation,
-                },
-            )
-            async for chunk in self._thinking_answerer.stream_answer(
-                question=question,
-                conversation=conversation,
-            ):
-                if first_chunk:
-                    first_chunk = False
-                    await self._emit_model_latency(model_started_at)
-                    await self._emit(
-                        "answer.first_delta",
-                        {
-                            "focus_id": focus_id,
-                            "duration_ms": max(
-                                0.0, (time.time() - model_started_at) * 1000
-                            ),
-                        },
-                    )
-                self.store.append_focus_answer(focus_id, chunk)
-                await self._emit(
-                    "answer.delta", {"focus_id": focus_id, "delta": chunk}
-                )
-            self.store.set_focus_answer_status(focus_id, AnswerStatus.COMPLETED)
-            focus = next(
-                item for item in self.store.focuses if item.focus_id == focus_id
-            )
-            await self._emit(
-                "answer.completed",
-                {
-                    "focus_id": focus_id,
-                    "question": question,
-                    "answer": focus.recommended_answer,
-                    "mode": AnswerMode.THINK.value,
-                    "duration_ms": max(
-                        0.0, (time.time() - model_started_at) * 1000
-                    ),
-                },
-            )
-            self.state = SessionState.LISTENING
-        except asyncio.CancelledError:
-            self.store.set_focus_answer_status(focus_id, AnswerStatus.INTERRUPTED)
-            await self._emit(
-                "answer.cancelled",
-                {"focus_id": focus_id, "reason": "superseded"},
-            )
-            raise
-        except Exception as exc:
-            self.store.set_focus_answer_status(focus_id, AnswerStatus.INTERRUPTED)
-            self.state = SessionState.LISTENING
-            await self._emit(
-                "answer.error",
-                {
-                    "focus_id": focus_id,
-                    "error_type": type(exc).__name__,
-                    "message": str(exc),
-                },
-            )
-            await self._emit(
-                "error", {"message": str(exc), "operation": "thinking_answer"}
-            )
-
-    async def _cancel_answer(self, reason: str) -> bool:
-        if not self._task_active(self._answer_task):
-            return False
-        self._answer_task.cancel()
-        await asyncio.gather(self._answer_task, return_exceptions=True)
-        self._answer_task = None
-        return True
 
     async def _cancel_active_focus(self, reason: str) -> bool:
         if not self._task_active(self._focus_task):

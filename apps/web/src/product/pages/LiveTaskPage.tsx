@@ -5,6 +5,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { AnswerCardCarousel } from '../../features/answer/AnswerCardCarousel'
 import { DiagnosticsBar } from '../../features/diagnostics/DiagnosticsBar'
+import { ScreenshotStatusBadge } from '../../features/session/ScreenshotStatusBadge'
 import { useRealtimeSession } from '../../features/session/useRealtimeSession'
 import { TranscriptPanel } from '../../features/transcript/TranscriptPanel'
 import { websocketUrl } from '../../shared/api'
@@ -76,6 +77,7 @@ export function LiveTaskPage() {
           <span className={`live-connection live-connection--${state.connection}`}>
             <i />{paused ? '已暂停' : state.connection === 'connected' ? '正在听取面试' : '正在连接电脑助手'}
           </span>
+          <ScreenshotStatusBadge state={state.screenshot} />
         </div>
         <div className="live-actions">
           <button className={`secondary-action live-phone-action ${phoneConnected ? 'live-phone-action--connected' : ''}`} type="button" onClick={() => setShowPhone(true)}>

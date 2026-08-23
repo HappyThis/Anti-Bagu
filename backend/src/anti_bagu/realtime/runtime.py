@@ -12,10 +12,8 @@ from anti_bagu.llm.deepseek import (
     FOCUS_SYSTEM_PROMPT,
     DeepSeekFocusResponder,
     DeepSeekScreenshotAnalyzer,
-    DeepSeekThinkingAnswerer,
     UnavailableFocusResponder,
     UnavailableScreenshotAnalyzer,
-    UnavailableThinkingAnswerer,
 )
 from anti_bagu.persistence.task_events import TaskEventRecorder
 from anti_bagu.telemetry.audit import DailyJsonlAudit
@@ -35,7 +33,6 @@ class TaskRuntime:
         self.recorder = recorder
         self.dashscope_api_key: str | None = None
         self._focus_responder = UnavailableFocusResponder()
-        self._thinking_answerer = UnavailableThinkingAnswerer()
         self._screenshot_analyzer = UnavailableScreenshotAnalyzer()
         self.coordinator = self._new_coordinator()
 
@@ -50,11 +47,6 @@ class TaskRuntime:
         await self._close_models()
         self.dashscope_api_key = dashscope_api_key
         self._focus_responder = DeepSeekFocusResponder(
-            deepseek_api_key,
-            self.settings.deepseek_base_url,
-            self.settings.deepseek_model,
-        )
-        self._thinking_answerer = DeepSeekThinkingAnswerer(
             deepseek_api_key,
             self.settings.deepseek_base_url,
             self.settings.deepseek_model,
@@ -82,7 +74,6 @@ class TaskRuntime:
         )
         return InterviewCoordinator(
             self._focus_responder,
-            self._thinking_answerer,
             self._screenshot_analyzer,
             self.event_hub,
             prompt_builder,
@@ -96,7 +87,6 @@ class TaskRuntime:
     async def _close_models(self) -> None:
         for model in (
             self._focus_responder,
-            self._thinking_answerer,
             self._screenshot_analyzer,
         ):
             close = getattr(model, "close", None)

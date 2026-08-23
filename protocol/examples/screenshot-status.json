@@ -1,0 +1,12 @@
+{
+  "type": "screenshot.focus.released",
+  "event_id": "example-screenshot-1",
+  "session_id": "example-session-1",
+  "conversation_revision": 1,
+  "created_at": 22.1,
+  "payload": {
+    "screenshot_id": "example-image-1",
+    "outcome": "completed",
+    "duration_ms": 21630
+  }
+}

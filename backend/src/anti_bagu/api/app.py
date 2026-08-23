@@ -25,10 +25,8 @@ from anti_bagu.llm.deepseek import (
     FOCUS_SYSTEM_PROMPT,
     DeepSeekFocusResponder,
     DeepSeekScreenshotAnalyzer,
-    DeepSeekThinkingAnswerer,
     UnavailableFocusResponder,
     UnavailableScreenshotAnalyzer,
-    UnavailableThinkingAnswerer,
 )
 from anti_bagu.mobile.hub import MobileHub
 from anti_bagu.persistence.database import create_database, create_schema
@@ -84,11 +82,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             active_settings.deepseek_base_url,
             active_settings.deepseek_model,
         )
-        thinking_answerer = DeepSeekThinkingAnswerer(
-            active_settings.deepseek_api_key,
-            active_settings.deepseek_base_url,
-            active_settings.deepseek_model,
-        )
         screenshot_analyzer = DeepSeekScreenshotAnalyzer(
             active_settings.deepseek_api_key,
             active_settings.deepseek_base_url,
@@ -96,7 +89,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
     else:
         focus_responder = UnavailableFocusResponder()
-        thinking_answerer = UnavailableThinkingAnswerer()
         screenshot_analyzer = UnavailableScreenshotAnalyzer()
 
     prompt_builder = FocusPromptBuilder(
@@ -108,7 +100,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     coordinator = InterviewCoordinator(
         focus_responder,
-        thinking_answerer,
         screenshot_analyzer,
         event_hub,
         prompt_builder,

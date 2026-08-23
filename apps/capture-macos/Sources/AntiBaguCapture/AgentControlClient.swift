@@ -44,7 +44,7 @@ actor AgentControlClient {
                 "device_key": Host.current().localizedName ?? "macos-default",
                 "name": Host.current().localizedName ?? "macOS Agent",
                 "platform": "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
-                "agent_version": "0.7.1",
+                "agent_version": "0.8.0",
                 "capabilities": [
                     "preflight_audio_test_v1",
                     "terminal_signal_meter_v1",
@@ -147,11 +147,25 @@ actor AgentControlClient {
             let message = payload["message"] as? String ?? ""
             switch status {
             case "accepted":
-                CLIOutput.success("Screenshot captured. Analysis is running in exclusive mode.")
+                CLIOutput.screenshotState(.analyzing)
             case "busy":
                 CLIOutput.warning("The previous screenshot is still being analyzed.")
             default:
-                CLIOutput.error(message.isEmpty ? "The screenshot was rejected." : message)
+                CLIOutput.screenshotState(.failed)
+                if !message.isEmpty { CLIOutput.detail(message) }
+            }
+        case "screenshot.status":
+            let status = payload["status"] as? String ?? "error"
+            let duration = payload["duration_ms"] as? Double
+            switch status {
+            case "completed":
+                CLIOutput.screenshotState(.completed, durationMilliseconds: duration)
+            case "no_question":
+                CLIOutput.screenshotState(.noQuestion, durationMilliseconds: duration)
+            case "timeout":
+                CLIOutput.screenshotState(.timeout, durationMilliseconds: duration)
+            default:
+                CLIOutput.screenshotState(.failed, durationMilliseconds: duration)
             }
         default:
             break
@@ -171,8 +185,10 @@ actor AgentControlClient {
         }
         screenshotSubmitting = true
         lastScreenshotAt = now
+        CLIOutput.screenshotState(.capturing)
         do {
             let data = try ScreenshotCapture.captureJPEG()
+            CLIOutput.screenshotState(.uploading)
             try await send([
                 "type": "screenshot.submit",
                 "request_id": UUID().uuidString,
@@ -180,9 +196,9 @@ actor AgentControlClient {
                 "mime_type": "image/jpeg",
                 "image_base64": data.base64EncodedString(),
             ])
-            CLIOutput.info("Screenshot sent. Keep the interview page open for the answer.")
         } catch {
             screenshotSubmitting = false
+            CLIOutput.screenshotState(.failed)
             CLIOutput.error("Screenshot failed: \(error)")
         }
     }

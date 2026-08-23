@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
+from anti_bagu.agent.hub import AgentUnavailable
 from anti_bagu.asr.qwen_streaming import QwenStreamingASRSession
 from anti_bagu.audio.protocol import AudioFramePacket, AudioMetadata, pcm_level
 from anti_bagu.interview.events import Channel, RealtimeEvent
@@ -141,6 +142,8 @@ async def mobile_answers(websocket: WebSocket, pairing_token: str) -> None:
                     "answer.completed",
                     "answer.cancelled",
                     "task.status",
+                    "screenshot.accepted",
+                    "screenshot.focus.released",
                     "error",
                 }:
                     await websocket.send_json(event.model_dump(mode="json"))
@@ -322,11 +325,26 @@ async def _handle_agent_screenshot(
         temporary.replace(absolute_path)
 
     await asyncio.to_thread(persist)
+
+    async def notify_agent(status_payload: dict[str, object]) -> None:
+        try:
+            await websocket.app.state.agent_hub.send(
+                user.id,
+                {
+                    **status_payload,
+                    "request_id": request_id,
+                    "task_id": task_id,
+                },
+            )
+        except AgentUnavailable:
+            pass
+
     accepted = await runtime.coordinator.handle_screenshot(
         screenshot_id=screenshot_id,
         image_data=image_data,
         mime_type=mime_type,
         storage_path=relative_path,
+        status_handler=notify_agent,
     )
     if not accepted:
         await asyncio.to_thread(absolute_path.unlink, True)

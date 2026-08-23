@@ -101,3 +101,33 @@ async def test_event_hub_replays_latest_audio_and_latency_state() -> None:
 
     assert audio.type == "audio.connected"
     assert latency.payload == {"microphone": 1.2}
+
+
+async def test_event_hub_replays_latest_screenshot_state() -> None:
+    hub = EventHub()
+    await hub.publish(
+        RealtimeEvent(
+            type="screenshot.accepted",
+            session_id="session",
+            conversation_revision=0,
+            payload={"screenshot_id": "screen-1"},
+        )
+    )
+    await hub.publish(
+        RealtimeEvent(
+            type="screenshot.focus.released",
+            session_id="session",
+            conversation_revision=0,
+            payload={
+                "screenshot_id": "screen-1",
+                "outcome": "completed",
+                "duration_ms": 21_630,
+            },
+        )
+    )
+
+    async with hub.subscribe() as queue:
+        screenshot = queue.get_nowait()
+
+    assert screenshot.type == "screenshot.focus.released"
+    assert screenshot.payload["duration_ms"] == 21_630

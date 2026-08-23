@@ -22,6 +22,7 @@ class EventHub:
         self._subscribers: set[asyncio.Queue[RealtimeEvent]] = set()
         self._audio_status: dict[str, RealtimeEvent] = {}
         self._latency_event: RealtimeEvent | None = None
+        self._screenshot_event: RealtimeEvent | None = None
 
     @property
     def subscriber_count(self) -> int:
@@ -46,6 +47,8 @@ class EventHub:
             self._latency_event = event.model_copy(
                 update={"payload": merged_payload}
             )
+        elif event.type in {"screenshot.accepted", "screenshot.focus.released"}:
+            self._screenshot_event = event
         if event.type.startswith("internal."):
             return
         for queue in tuple(self._subscribers):
@@ -61,6 +64,8 @@ class EventHub:
             queue.put_nowait(event)
         if self._latency_event is not None:
             queue.put_nowait(self._latency_event)
+        if self._screenshot_event is not None:
+            queue.put_nowait(self._screenshot_event)
         try:
             yield queue
         finally:

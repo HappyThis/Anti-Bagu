@@ -1,7 +1,5 @@
 from anti_bagu.interview.conversation import ConversationStore
 from anti_bagu.interview.events import (
-    AnswerMode,
-    AnswerStatus,
     Channel,
     TranscriptEvent,
     TranscriptPhase,
@@ -35,15 +33,10 @@ def test_committed_focus_keeps_visible_answer_and_source_range() -> None:
     store.append_final(final(Channel.INTERVIEWER, "设计一个限流器"))
     focus = store.commit_focus(
         question="设计一个限流器",
-        answer_mode=AnswerMode.THINK,
-        recommended_answer="",
-        answer_status=AnswerStatus.GENERATING,
+        recommended_answer="先使用令牌桶。",
         source_end_turn_id=1,
     )
-    store.append_focus_answer(focus.focus_id, "先使用令牌桶。")
-    store.set_focus_answer_status(focus.focus_id, AnswerStatus.INTERRUPTED)
 
     assert store.current_focus == "设计一个限流器"
     assert store.current_recommended_answer == "先使用令牌桶。"
-    assert focus.answer_status is AnswerStatus.INTERRUPTED
     assert (focus.source_start_turn_id, focus.source_end_turn_id) == (1, 1)

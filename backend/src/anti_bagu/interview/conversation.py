@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 from anti_bagu.interview.events import (
-    AnswerMode,
-    AnswerStatus,
     Channel,
     CommittedFocus,
-    ContentKind,
     ConversationTurn,
     FocusSource,
     TranscriptEvent,
@@ -60,59 +57,27 @@ class ConversationStore:
         self,
         *,
         question: str,
-        answer_mode: AnswerMode,
         recommended_answer: str,
-        answer_status: AnswerStatus,
         source_end_turn_id: int,
-        code: str = "",
-        language: str = "",
-        complexity: str = "",
-        content_kind: ContentKind = ContentKind.KNOWLEDGE,
+        code: str | None = None,
         source: FocusSource = FocusSource.VOICE,
         screenshot_id: str = "",
     ) -> CommittedFocus:
         previous_end = self._focuses[-1].source_end_turn_id if self._focuses else 0
         focus = CommittedFocus(
             question=question.strip(),
-            answer_mode=answer_mode,
             recommended_answer=recommended_answer.strip(),
-            code=code.strip(),
-            language=language.strip(),
-            complexity=complexity.strip(),
-            content_kind=content_kind,
+            code=code.strip() if code else None,
             source=source,
             screenshot_id=screenshot_id,
-            answer_status=answer_status,
             source_start_turn_id=min(previous_end + 1, source_end_turn_id),
             source_end_turn_id=source_end_turn_id,
         )
         self._focuses.append(focus)
         return focus
 
-    def append_focus_answer(self, focus_id: str, chunk: str) -> bool:
-        focus = self._find_focus(focus_id)
-        if focus is None:
-            return False
-        focus.recommended_answer += chunk
-        return True
-
-    def set_focus_answer_status(
-        self, focus_id: str, status: AnswerStatus
-    ) -> bool:
-        focus = self._find_focus(focus_id)
-        if focus is None:
-            return False
-        focus.answer_status = status
-        return True
-
     def recent_conversation_payload(self, max_turns: int = 20) -> list[dict[str, str]]:
         return [
             {"role": turn.channel.value, "text": turn.text}
             for turn in self._turns[-max_turns:]
         ]
-
-    def _find_focus(self, focus_id: str) -> CommittedFocus | None:
-        for focus in reversed(self._focuses):
-            if focus.focus_id == focus_id:
-                return focus
-        return None

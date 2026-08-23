@@ -6,10 +6,8 @@ import pytest
 from fakes.models import (
     BlockingFocusResponder,
     BlockingScreenshotAnalyzer,
-    BlockingThinkingAnswerer,
     FakeFocusResponder,
     FakeScreenshotAnalyzer,
-    FakeThinkingAnswerer,
     PreemptibleFocusResponder,
     SequencedFocusResponder,
 )
@@ -17,16 +15,12 @@ from fakes.models import (
 from anti_bagu.interview.context import FocusPromptBuilder
 from anti_bagu.interview.coordinator import InterviewCoordinator
 from anti_bagu.interview.events import (
-    AnswerMode,
-    AnswerStatus,
+    AnswerResult,
     Channel,
-    ContentKind,
-    FocusAction,
-    FocusResult,
     FocusSource,
-    ScreenshotFocusResult,
     TranscriptEvent,
     TranscriptPhase,
+    WaitResult,
 )
 from anti_bagu.interview.sink import MemoryEventSink
 
@@ -49,18 +43,13 @@ def transcript(
 def coordinator(
     responder,
     *,
-    thinking=None,
     screenshot=None,
     sink=None,
     debounce_seconds: float = 0,
 ) -> InterviewCoordinator:
     return InterviewCoordinator(
         responder,
-        thinking or FakeThinkingAnswerer(),
-        screenshot
-        or FakeScreenshotAnalyzer(
-            ScreenshotFocusResult(action=FocusAction.WAIT)
-        ),
+        screenshot or FakeScreenshotAnalyzer(wait_result()),
         sink or MemoryEventSink(),
         FocusPromptBuilder(system_prompt="I 是面试官，C 是候选人。返回 JSON。"),
         debounce_seconds=debounce_seconds,
@@ -68,16 +57,20 @@ def coordinator(
     )
 
 
-def wait_result() -> FocusResult:
-    return FocusResult(action=FocusAction.WAIT, answer_mode=AnswerMode.NONE)
+def wait_result() -> WaitResult:
+    return WaitResult(type="wait")
 
 
-def fast_result(question: str, answer: str = "简短回答。") -> FocusResult:
-    return FocusResult(
-        action=FocusAction.RESPOND,
-        answer_mode=AnswerMode.FAST,
-        focus_question=question,
+def answer_result(
+    question: str,
+    answer: str = "简短回答。",
+    code: str | None = None,
+) -> AnswerResult:
+    return AnswerResult(
+        type="answer",
+        question=question,
         answer=answer,
+        code=code,
     )
 
 
@@ -101,7 +94,7 @@ async def test_candidate_final_is_stored_without_triggering_focus() -> None:
 @pytest.mark.asyncio
 async def test_interviewer_final_commits_focus_and_recommendation() -> None:
     responder = FakeFocusResponder(
-        fast_result("Redis 为什么快？", "因为内存和 I/O 多路复用。")
+        answer_result("Redis 为什么快？", "因为内存和 I/O 多路复用。")
     )
     sink = MemoryEventSink()
     subject = coordinator(responder, sink=sink)
@@ -115,7 +108,6 @@ async def test_interviewer_final_commits_focus_and_recommendation() -> None:
     assert "- I（最新）: Redis 为什么快？" in responder.calls[0]["prompt"]
     assert subject.store.current_focus == "Redis 为什么快？"
     assert subject.store.current_recommended_answer == "因为内存和 I/O 多路复用。"
-    assert subject.store.focuses[-1].answer_status is AnswerStatus.COMPLETED
     assert [event.type for event in sink.events].count("answer.completed") == 1
     lifecycle = [event.type for event in sink.events]
     assert "transcript.committed" in lifecycle
@@ -127,7 +119,7 @@ async def test_interviewer_final_commits_focus_and_recommendation() -> None:
 
 @pytest.mark.asyncio
 async def test_two_quick_finals_share_one_debounced_request() -> None:
-    responder = FakeFocusResponder(fast_result("MySQL 中如何定位慢查询？"))
+    responder = FakeFocusResponder(answer_result("MySQL 中如何定位慢查询？"))
     subject = coordinator(responder, debounce_seconds=0.03)
 
     await subject.handle_transcript(
@@ -151,7 +143,7 @@ async def test_two_quick_finals_share_one_debounced_request() -> None:
 
 @pytest.mark.asyncio
 async def test_candidate_final_does_not_cancel_active_focus() -> None:
-    responder = BlockingFocusResponder(fast_result("什么是 AQS？"))
+    responder = BlockingFocusResponder(answer_result("什么是 AQS？"))
     subject = coordinator(responder)
 
     await subject.handle_transcript(
@@ -177,7 +169,7 @@ async def test_candidate_final_does_not_cancel_active_focus() -> None:
 
 @pytest.mark.asyncio
 async def test_interviewer_partial_does_not_cancel_running_focus() -> None:
-    responder = BlockingFocusResponder(fast_result("什么是 AQS？"))
+    responder = BlockingFocusResponder(answer_result("什么是 AQS？"))
     subject = coordinator(responder)
 
     await subject.handle_transcript(
@@ -201,7 +193,7 @@ async def test_interviewer_partial_does_not_cancel_running_focus() -> None:
 @pytest.mark.asyncio
 async def test_new_focus_attempt_preempts_old_attempt_but_keeps_all_finals() -> None:
     responder = PreemptibleFocusResponder(
-        fast_result("MySQL 中如何定位慢查询？")
+        answer_result("MySQL 中如何定位慢查询？")
     )
     subject = coordinator(responder, debounce_seconds=0.01)
 
@@ -233,8 +225,8 @@ async def test_new_focus_attempt_preempts_old_attempt_but_keeps_all_finals() -> 
 async def test_previous_focus_and_answer_are_in_next_prompt() -> None:
     responder = SequencedFocusResponder(
         (
-            fast_result("Redis 为什么快？", "因为内存和 I/O 多路复用。"),
-            fast_result("Redis 的 I/O 模型为什么高效？"),
+            answer_result("Redis 为什么快？", "因为内存和 I/O 多路复用。"),
+            answer_result("Redis 的 I/O 模型为什么高效？"),
         )
     )
     subject = coordinator(responder)
@@ -264,80 +256,22 @@ async def test_previous_focus_and_answer_are_in_next_prompt() -> None:
 
 
 @pytest.mark.asyncio
-async def test_thinking_answer_is_saved_for_future_focus_context() -> None:
-    responder = FakeFocusResponder(
-        FocusResult(
-            action=FocusAction.RESPOND,
-            answer_mode=AnswerMode.THINK,
-            focus_question="设计一个限流器",
-        )
-    )
-    sink = MemoryEventSink()
-    thinking = FakeThinkingAnswerer(("先使用令牌桶。", "再考虑分布式一致性。"))
-    subject = coordinator(responder, thinking=thinking, sink=sink)
-
-    await subject.handle_transcript(
-        transcript(Channel.INTERVIEWER, TranscriptPhase.FINAL, "设计一个限流器")
-    )
-    await subject.wait_idle()
-
-    committed = subject.store.focuses[-1]
-    assert committed.recommended_answer == "先使用令牌桶。再考虑分布式一致性。"
-    assert committed.answer_status is AnswerStatus.COMPLETED
-    assert [event.type for event in sink.events].count("answer.delta") == 2
-
-
-@pytest.mark.asyncio
-async def test_new_committed_focus_cancels_old_thinking_answer() -> None:
-    responder = SequencedFocusResponder(
-        (
-            FocusResult(
-                action=FocusAction.RESPOND,
-                answer_mode=AnswerMode.THINK,
-                focus_question="设计一个限流器",
-            ),
-            fast_result("MySQL 中如何定位慢查询？"),
-        )
-    )
-    thinking = BlockingThinkingAnswerer()
-    subject = coordinator(responder, thinking=thinking, debounce_seconds=0.01)
-
-    await subject.handle_transcript(
-        transcript(Channel.INTERVIEWER, TranscriptPhase.FINAL, "设计一个限流器")
-    )
-    await thinking.started.wait()
-    first_focus = subject.store.focuses[-1]
-    await subject.handle_transcript(
-        transcript(
-            Channel.INTERVIEWER,
-            TranscriptPhase.FINAL,
-            "MySQL 中如何定位慢查询？",
-            utterance_id="interviewer-2",
-        )
-    )
-    await subject.wait_idle()
-
-    assert thinking.cancelled
-    assert first_focus.answer_status is AnswerStatus.INTERRUPTED
-    assert first_focus.recommended_answer == "已经显示的部分。"
-    assert subject.store.current_focus == "MySQL 中如何定位慢查询？"
-
-
-@pytest.mark.asyncio
 async def test_screenshot_focus_is_exclusive_and_defers_voice_focus() -> None:
     screenshot = BlockingScreenshotAnalyzer(
-        ScreenshotFocusResult(
-            action=FocusAction.RESPOND,
-            focus_question="实现两数之和",
+        AnswerResult(
+            type="answer",
+            question="实现两数之和",
             answer="使用哈希表保存已经遍历的数字。",
-            content_kind=ContentKind.CODING,
             code="def two_sum(nums, target):\n    return []",
-            language="python",
-            complexity="时间 O(n)，空间 O(n)",
         )
     )
-    responder = FakeFocusResponder(fast_result("Redis 为什么快？"))
+    responder = FakeFocusResponder(answer_result("Redis 为什么快？"))
     sink = MemoryEventSink()
+    status_updates: list[dict[str, object]] = []
+
+    async def record_status(payload: dict[str, object]) -> None:
+        status_updates.append(payload)
+
     subject = coordinator(
         responder,
         screenshot=screenshot,
@@ -350,6 +284,7 @@ async def test_screenshot_focus_is_exclusive_and_defers_voice_focus() -> None:
         image_data=b"fake-jpeg",
         mime_type="image/jpeg",
         storage_path="tasks/task-1/screenshots/screen-1.jpg",
+        status_handler=record_status,
     )
     await screenshot.started.wait()
     await subject.handle_transcript(
@@ -383,20 +318,19 @@ async def test_screenshot_focus_is_exclusive_and_defers_voice_focus() -> None:
     assert len(responder.calls) == 1
     assert "Redis 为什么快？" in responder.calls[0]["prompt"]
     assert not subject.screenshot_focus_active
-    assert any(event.type == "focus.deferred" for event in sink.events)
+    assert any(event.type == "focus.blocked" for event in sink.events)
+    assert status_updates[-1]["status"] == "completed"
+    assert float(status_updates[-1]["duration_ms"]) >= 0
 
 
 @pytest.mark.asyncio
 async def test_screenshot_focus_emits_structured_answer() -> None:
     screenshot = FakeScreenshotAnalyzer(
-        ScreenshotFocusResult(
-            action=FocusAction.RESPOND,
-            focus_question="反转链表",
-            answer="使用三个指针迭代反转。",
-            content_kind=ContentKind.CODING,
+        AnswerResult(
+            type="answer",
+            question="反转链表",
+            answer="使用三个指针迭代反转。时间 O(n)，空间 O(1)。",
             code="def reverse_list(head):\n    return head",
-            language="python",
-            complexity="时间 O(n)，空间 O(1)",
         )
     )
     sink = MemoryEventSink()
@@ -413,7 +347,6 @@ async def test_screenshot_focus_emits_structured_answer() -> None:
     await subject.wait_idle()
 
     completed = next(event for event in sink.events if event.type == "answer.completed")
-    assert completed.payload["content_kind"] == "CODING"
-    assert completed.payload["language"] == "python"
+    assert completed.payload["protocol_version"] == 2
     assert completed.payload["code"].startswith("def reverse_list")
     assert completed.payload["source"] == "SCREENSHOT"

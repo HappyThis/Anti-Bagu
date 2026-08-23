@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 
 class Channel(StrEnum):
@@ -16,28 +17,6 @@ class Channel(StrEnum):
 class TranscriptPhase(StrEnum):
     PARTIAL = "partial"
     FINAL = "final"
-
-
-class FocusAction(StrEnum):
-    WAIT = "WAIT"
-    RESPOND = "RESPOND"
-
-
-class AnswerMode(StrEnum):
-    NONE = "NONE"
-    FAST = "FAST"
-    THINK = "THINK"
-
-
-class AnswerStatus(StrEnum):
-    GENERATING = "GENERATING"
-    COMPLETED = "COMPLETED"
-    INTERRUPTED = "INTERRUPTED"
-
-
-class ContentKind(StrEnum):
-    KNOWLEDGE = "KNOWLEDGE"
-    CODING = "CODING"
 
 
 class FocusSource(StrEnum):
@@ -69,90 +48,52 @@ class ConversationTurn(BaseModel):
 class CommittedFocus(BaseModel):
     focus_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     question: str
-    answer_mode: AnswerMode
     recommended_answer: str = ""
-    code: str = ""
-    language: str = ""
-    complexity: str = ""
-    content_kind: ContentKind = ContentKind.KNOWLEDGE
+    code: str | None = None
     source: FocusSource = FocusSource.VOICE
     screenshot_id: str = ""
-    answer_status: AnswerStatus
     source_start_turn_id: int
     source_end_turn_id: int
     created_at: float = Field(default_factory=time.time)
 
 
-class FocusResult(BaseModel):
+class WaitResult(BaseModel):
+    """Canonical no-answer result; harmless extra model fields are discarded."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["wait"]
+
+
+class AnswerResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action: FocusAction
-    answer_mode: AnswerMode
-    focus_question: str = ""
-    answer: str = ""
-    content_kind: ContentKind = ContentKind.KNOWLEDGE
-    code: str = ""
-    language: str = ""
-    complexity: str = ""
+    type: Literal["answer"]
+    question: str
+    answer: str
+    code: str | None = None
 
     @model_validator(mode="after")
-    def validate_protocol(self) -> FocusResult:
-        if self.action is FocusAction.WAIT:
-            if self.answer_mode is not AnswerMode.NONE:
-                raise ValueError("WAIT requires answer_mode NONE")
-            if self.focus_question or self.answer or self.code:
-                raise ValueError("WAIT requires empty focus_question, answer, and code")
-            return self
-
-        if not self.focus_question.strip():
-            raise ValueError("RESPOND requires a focus_question")
-        if self.answer_mode is AnswerMode.NONE:
-            raise ValueError("RESPOND cannot use answer_mode NONE")
-        if self.answer_mode is AnswerMode.FAST and not self.answer.strip():
-            raise ValueError("FAST requires an answer")
-        if self.answer_mode is AnswerMode.THINK and (self.answer or self.code):
-            raise ValueError("THINK requires an empty answer and code")
-        if self.content_kind is ContentKind.CODING and self.answer_mode is AnswerMode.FAST:
-            if not self.code.strip():
-                raise ValueError("FAST CODING requires code")
-            if not self.language.strip():
-                self.language = "python"
+    def validate_answer(self) -> AnswerResult:
+        self.question = self.question.strip()
+        self.answer = self.answer.strip()
+        self.code = self.code.strip() if self.code and self.code.strip() else None
+        if not self.question:
+            raise ValueError("answer requires a question")
+        if not self.answer:
+            raise ValueError("answer requires answer text")
         return self
 
 
-class ScreenshotFocusResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+ModelResult = Annotated[WaitResult | AnswerResult, Field(discriminator="type")]
+MODEL_RESULT_ADAPTER = TypeAdapter(ModelResult)
 
-    action: FocusAction
-    focus_question: str = ""
-    answer: str = ""
-    content_kind: ContentKind = ContentKind.CODING
-    code: str = ""
-    language: str = ""
-    complexity: str = ""
 
-    @model_validator(mode="after")
-    def validate_protocol(self) -> ScreenshotFocusResult:
-        if self.action is FocusAction.WAIT:
-            if (
-                self.focus_question
-                or self.answer
-                or self.code
-                or self.language
-                or self.complexity
-            ):
-                raise ValueError("WAIT requires all response fields to be empty")
-            return self
-        if not self.focus_question.strip():
-            raise ValueError("RESPOND requires a focus_question")
-        if not self.answer.strip():
-            raise ValueError("RESPOND requires an answer")
-        if self.content_kind is ContentKind.CODING:
-            if not self.code.strip():
-                raise ValueError("CODING requires code")
-            if not self.language.strip():
-                self.language = "python"
-        return self
+def parse_model_result_json(content: str) -> ModelResult:
+    payload = json.loads(content)
+    if isinstance(payload, dict) and payload.get("type") == "wait":
+        return WaitResult(type="wait")
+    return MODEL_RESULT_ADAPTER.validate_python(payload)
 
 
 class RealtimeEvent(BaseModel):

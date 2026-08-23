@@ -5,11 +5,7 @@ export interface AnswerCard {
   question: string
   answer: string
   code: string
-  language: string
-  complexity: string
-  contentKind: string
   source: string
-  mode: string
   generating: boolean
   cancelled: boolean
   error: string
@@ -37,10 +33,7 @@ export function applyAnswerEvent(cards: AnswerCard[], event: RealtimeEvent): Ans
     if (latest?.question === question && !latest.answer) {
       return replaceLatest(cards, {
         ...latest,
-        mode: String(payload.mode ?? latest.mode),
-        contentKind: String(payload.content_kind ?? latest.contentKind),
         source: String(payload.source ?? latest.source),
-        language: String(payload.language ?? latest.language),
         error: '',
       })
     }
@@ -51,11 +44,7 @@ export function applyAnswerEvent(cards: AnswerCard[], event: RealtimeEvent): Ans
         question,
         answer: '',
         code: '',
-        language: '',
-        complexity: '',
-        contentKind: String(payload.content_kind ?? 'KNOWLEDGE'),
         source: String(payload.source ?? 'VOICE'),
-        mode: String(payload.mode ?? ''),
         generating: false,
         cancelled: false,
         error: '',
@@ -74,15 +63,15 @@ export function applyAnswerEvent(cards: AnswerCard[], event: RealtimeEvent): Ans
     return replaceAt(cards, targetIndex, { ...target, answer: target.answer + String(payload.delta ?? ''), generating: true })
   }
   if (event.type === 'answer.completed') {
+    const answer = withLegacyComplexity(
+      String(payload.answer ?? ''),
+      String(payload.complexity ?? ''),
+    )
     return replaceAt(cards, targetIndex, {
       ...target,
-      answer: String(payload.answer ?? ''),
+      answer,
       code: String(payload.code ?? target.code),
-      language: String(payload.language ?? target.language),
-      complexity: String(payload.complexity ?? target.complexity),
-      contentKind: String(payload.content_kind ?? target.contentKind),
       source: String(payload.source ?? target.source),
-      mode: String(payload.mode ?? target.mode),
       generating: false,
       cancelled: false,
     })
@@ -91,6 +80,11 @@ export function applyAnswerEvent(cards: AnswerCard[], event: RealtimeEvent): Ans
     return replaceAt(cards, targetIndex, { ...target, generating: false, cancelled: true })
   }
   return replaceAt(cards, targetIndex, { ...target, generating: false, error: String(payload.message ?? '生成回答时出现问题') })
+}
+
+function withLegacyComplexity(answer: string, complexity: string): string {
+  if (!complexity || answer.includes(complexity)) return answer
+  return `${answer}\n${complexity}`
 }
 
 function replaceLatest(cards: AnswerCard[], latest: AnswerCard): AnswerCard[] {

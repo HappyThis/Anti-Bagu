@@ -9,6 +9,16 @@ enum CLITaskState: String {
     case reconnecting = "RECONNECTING"
 }
 
+enum CLIScreenshotState: String {
+    case capturing = "CAPTURING"
+    case uploading = "UPLOADING"
+    case analyzing = "ANALYZING"
+    case completed = "COMPLETED"
+    case noQuestion = "NO QUESTION"
+    case timeout = "TIMEOUT"
+    case failed = "FAILED"
+}
+
 enum CLIOutput {
     private enum Color: String {
         case reset = "\u{001B}[0m"
@@ -83,6 +93,25 @@ enum CLIOutput {
         }
         let suffix = taskID.map { "  \(styled(String($0.prefix(8)), .dim))" } ?? ""
         write("\(styled("[TASK]", .bold, color)) \(styled(state.rawValue, .bold, color))\(suffix)")
+    }
+
+    static func screenshotState(
+        _ state: CLIScreenshotState,
+        durationMilliseconds: Double? = nil
+    ) {
+        let color: Color = switch state {
+        case .capturing, .uploading, .analyzing: .cyan
+        case .completed: .green
+        case .noQuestion, .timeout: .yellow
+        case .failed: .red
+        }
+        let duration = durationMilliseconds.map {
+            String(format: "  %.1fs", $0 / 1_000)
+        } ?? ""
+        write(
+            "\(styled("[SCREENSHOT]", .bold, color)) "
+                + "\(styled(state.rawValue, .bold, color))\(duration)"
+        )
     }
 
     static func signal(interview: AudioSignalLevel, microphone: AudioSignalLevel) {

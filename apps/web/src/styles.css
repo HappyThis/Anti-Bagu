@@ -1038,7 +1038,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .mobile-card-pane { min-width: 100%; height: 100%; scroll-snap-align: start; }
 .mobile-code-block { min-height: 0; display: flex; flex-direction: column; padding: 10px 12px 8px; overflow: hidden; }
 .mobile-code-block > span { flex: 0 0 auto; color: var(--blue); font-size: 9px; font-weight: 750; }
-.mobile-code-copy { min-height: 0; flex: 1; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 5px; margin-top: 7px; overflow: hidden; border-radius: 8px; padding: 8px; background: #f7f9fc; color: #17243a; }
+.mobile-code-copy { min-height: 0; flex: 1; display: grid; grid-template-rows: minmax(0, 1fr); gap: 5px; margin-top: 7px; overflow: hidden; border-radius: 8px; padding: 8px; background: #f7f9fc; color: #17243a; }
 .mobile-code-copy code { min-width: 0; min-height: 0; display: block; overflow: hidden; font: 12px/1.32 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; tab-size: 2; white-space: pre; }
 .mobile-code-copy small { color: var(--muted); font-size: 8px; line-height: 1.25; }
 .mobile-pane-indicator { display: flex; align-items: center; justify-content: center; gap: 5px; border-top: 1px solid var(--border); color: var(--muted); font-size: 8px; }
@@ -1053,6 +1053,11 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .mobile-live-state i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
 .mobile-live-state--connecting { color: var(--amber); }
 .mobile-live-state--connecting i { background: var(--amber); }
+.screenshot-status { width: fit-content; display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; border-radius: 999px; padding: 6px 10px; background: var(--blue-soft); color: var(--blue); font-size: 10px; font-weight: 720; }
+.screenshot-status--completed { background: var(--green-soft); color: var(--green-dark); }
+.screenshot-status--no_question, .screenshot-status--timeout { background: var(--amber-soft); color: var(--amber); }
+.screenshot-status--error, .screenshot-status--cancelled { background: var(--red-soft); color: var(--red); }
+.screenshot-status--compact { max-width: 190px; margin-top: 0; padding: 5px 8px; font-size: 9px; white-space: nowrap; }
 .mobile-companion-page--centered { display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--amber); text-align: center; }
 .mobile-companion-page--centered h1 { margin: 18px 0 8px; color: var(--ink); }
 .mobile-companion-page--centered p { color: var(--muted); }

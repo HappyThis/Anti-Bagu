@@ -1,6 +1,7 @@
 import { useEffect, useReducer } from 'react'
 
 import { applyAnswerEvent, type AnswerCard } from '../answer/answerCards'
+import { applyScreenshotEvent, EMPTY_SCREENSHOT_STATE, type ScreenshotState } from './screenshotState'
 import type {
   Channel,
   LatencySnapshot,
@@ -18,8 +19,8 @@ export interface RealtimeState {
   audioConnected: Record<Channel, boolean>
   focus: string
   answer: string
-  answerMode: string
   answerCards: AnswerCard[]
+  screenshot: ScreenshotState
   generating: boolean
   error: string
   latency: LatencySnapshot
@@ -77,18 +78,13 @@ function demoState(): RealtimeState {
     focus: 'Redis 为什么这么快？',
     answer:
       'Redis 快主要有四点：第一，数据主要在内存中访问；第二，命令执行路径避免了大量锁竞争；第三，使用 I/O 多路复用处理并发连接；第四，底层数据结构针对不同场景做了优化。',
-    answerMode: 'FAST',
     answerCards: [
       {
         id: 'demo-1',
         question: '你在项目中使用过哪些缓存中间件？',
         answer: '主要使用过 Redis，并在不同场景采用旁路缓存和分布式锁。',
         code: '',
-        language: '',
-        complexity: '',
-        contentKind: 'KNOWLEDGE',
         source: 'VOICE',
-        mode: 'FAST',
         generating: false,
         cancelled: false,
         error: '',
@@ -99,17 +95,14 @@ function demoState(): RealtimeState {
         question: 'Redis 为什么这么快？',
         answer: 'Redis 快主要有四点：第一，数据主要在内存中访问；第二，命令执行路径避免了大量锁竞争；第三，使用 I/O 多路复用处理并发连接；第四，底层数据结构针对不同场景做了优化。',
         code: '',
-        language: '',
-        complexity: '',
-        contentKind: 'KNOWLEDGE',
         source: 'VOICE',
-        mode: 'FAST',
         generating: false,
         cancelled: false,
         error: '',
         createdAt: 2,
       },
     ],
+    screenshot: EMPTY_SCREENSHOT_STATE,
     generating: false,
     error: '',
     latency: {
@@ -131,8 +124,8 @@ function emptyState(): RealtimeState {
     audioConnected: { interviewer: false, candidate: false },
     focus: '',
     answer: '',
-    answerMode: '',
     answerCards: [],
+    screenshot: EMPTY_SCREENSHOT_STATE,
     generating: false,
     error: '',
     latency: EMPTY_LATENCY,
@@ -159,6 +152,7 @@ function appendTranscript(
 function applyEvent(state: RealtimeState, event: RealtimeEvent): RealtimeState {
   const payload = event.payload
   const answerCards = applyAnswerEvent(state.answerCards, event)
+  const screenshot = applyScreenshotEvent(state.screenshot, event)
   if (event.type === 'transcript.partial' || event.type === 'transcript.final') {
     const channel = payload.channel as Channel
     const text = String(payload.text ?? '')
@@ -176,9 +170,9 @@ function applyEvent(state: RealtimeState, event: RealtimeEvent): RealtimeState {
     return {
       ...state,
       focus: String(payload.question ?? ''),
-      answerMode: String(payload.mode ?? ''),
       answer: '',
       answerCards,
+      screenshot,
       error: '',
     }
   }
@@ -193,29 +187,30 @@ function applyEvent(state: RealtimeState, event: RealtimeEvent): RealtimeState {
     }
   }
   if (event.type === 'answer.started') {
-    return { ...state, answerCards, generating: true, answer: '', error: '' }
+    return { ...state, answerCards, screenshot, generating: true, answer: '', error: '' }
   }
   if (event.type === 'answer.delta') {
-    return { ...state, answerCards, generating: true, answer: state.answer + String(payload.delta ?? '') }
+    return { ...state, answerCards, screenshot, generating: true, answer: state.answer + String(payload.delta ?? '') }
   }
   if (event.type === 'answer.completed') {
     return {
       ...state,
       generating: false,
       answerCards,
+      screenshot,
       answer: String(payload.answer ?? ''),
-      answerMode: String(payload.mode ?? state.answerMode),
     }
   }
   if (event.type === 'answer.cancelled') {
-    return { ...state, answerCards, generating: false }
+    return { ...state, answerCards, screenshot, generating: false }
   }
   if (event.type === 'latency.updated') {
     return { ...state, latency: { ...state.latency, ...payload } }
   }
   if (event.type === 'error') {
-    return { ...state, answerCards, generating: false, error: String(payload.message ?? '未知错误') }
+    return { ...state, answerCards, screenshot, generating: false, error: String(payload.message ?? '未知错误') }
   }
+  if (screenshot !== state.screenshot) return { ...state, screenshot }
   return state
 }
 
