@@ -41,7 +41,10 @@ export function AnswerCardCarousel({ cards, onClear }: { cards: AnswerCard[]; on
     if (bounded === cards.length - 1) setUnseen(false)
     const viewport = viewportRef.current
     if (!viewport) return
-    const left = bounded * viewport.clientWidth
+    const maximumScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth)
+    const left = cards.length > 1
+      ? maximumScroll * (bounded / (cards.length - 1))
+      : 0
     if (behavior === 'auto') {
       viewport.scrollLeft = left
     } else {
@@ -51,8 +54,11 @@ export function AnswerCardCarousel({ cards, onClear }: { cards: AnswerCard[]; on
 
   function updateIndexFromScroll() {
     const viewport = viewportRef.current
-    if (!viewport || viewport.clientWidth === 0) return
-    const nextIndex = Math.round(viewport.scrollLeft / viewport.clientWidth)
+    if (!viewport) return
+    const maximumScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth)
+    const nextIndex = maximumScroll > 0
+      ? Math.round((viewport.scrollLeft / maximumScroll) * (cards.length - 1))
+      : 0
     setIndex(nextIndex)
     if (nextIndex === cards.length - 1) setUnseen(false)
   }
