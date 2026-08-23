@@ -44,7 +44,7 @@ actor AgentControlClient {
                 "device_key": Host.current().localizedName ?? "macos-default",
                 "name": Host.current().localizedName ?? "macOS Agent",
                 "platform": "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
-                "agent_version": "0.7.0",
+                "agent_version": "0.7.1",
                 "capabilities": [
                     "preflight_audio_test_v1",
                     "terminal_signal_meter_v1",

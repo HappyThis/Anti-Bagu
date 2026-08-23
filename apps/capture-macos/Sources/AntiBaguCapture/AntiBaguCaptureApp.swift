@@ -207,15 +207,18 @@ struct AntiBaguCaptureApp {
     }
 
     private static func waitForInterrupt() async {
-        await withCheckedContinuation { continuation in
-            signal(SIGINT, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: SIGINT)
-            source.setEventHandler {
-                source.cancel()
-                continuation.resume()
+        signal(SIGINT, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGINT)
+        source.setEventHandler {
+            DispatchQueue.main.async {
+                stopApplicationEventLoop()
             }
-            source.resume()
         }
+        source.resume()
+        await MainActor.run {
+            NSApplication.shared.run()
+        }
+        source.cancel()
     }
 
     private static func printUsage() {
@@ -227,6 +230,24 @@ struct AntiBaguCaptureApp {
         CLIOutput.section("Storage")
         CLIOutput.detail("Login session: ~/.anti-bagu/session.json")
         CLIOutput.detail("Model keys are managed on the website under Settings.")
+    }
+}
+
+@MainActor
+private func stopApplicationEventLoop() {
+    NSApplication.shared.stop(nil)
+    if let wakeEvent = NSEvent.otherEvent(
+        with: .applicationDefined,
+        location: .zero,
+        modifierFlags: [],
+        timestamp: 0,
+        windowNumber: 0,
+        context: nil,
+        subtype: 0,
+        data1: 0,
+        data2: 0
+    ) {
+        NSApplication.shared.postEvent(wakeEvent, atStart: false)
     }
 }
 
