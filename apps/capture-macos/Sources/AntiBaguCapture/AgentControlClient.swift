@@ -49,7 +49,7 @@ actor AgentControlClient {
                 try? await self?.send(["type": "agent.heartbeat", "at": Date().timeIntervalSince1970])
             }
         }
-        print("电脑助手已连接。")
+        CLIOutput.success("Control channel connected.")
         do {
             while let message = try await receive() {
                 try await handle(message)
@@ -144,10 +144,10 @@ enum AgentControlError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .invalidServerURL: "服务地址无效"
-        case .insecureRemoteConnection: "远程连接必须使用 HTTPS/WSS"
-        case .notConnected: "Agent 控制通道未连接"
-        case .invalidMessage: "Agent 消息编码失败"
+        case .invalidServerURL: "The server URL is invalid."
+        case .insecureRemoteConnection: "Remote connections require HTTPS/WSS."
+        case .notConnected: "The agent control channel is not connected."
+        case .invalidMessage: "The agent message could not be encoded."
         }
     }
 }

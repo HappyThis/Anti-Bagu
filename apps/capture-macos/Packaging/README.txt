@@ -1,23 +1,45 @@
-Anti-Bagu 电脑助手
+Anti-Bagu Agent for macOS
 
-1. 双击“Start-Anti-Bagu.command”。
-2. 浏览器会自动打开；如果网页已经登录，只需点击“允许登录”。
-3. 如果网页尚未登录，先在网页中登录，再点击“允许登录”。
-4. 根据电脑助手提示允许“麦克风”和“屏幕与系统音频录制”。
-5. 模型服务密钥请在网页“设置”中填写，电脑助手不会要求输入密钥。
-6. 保持窗口打开，然后回到网页继续准备面试。
+START
 
-登录凭据保存在 ~/.anti-bagu/session.json，仅当前 macOS 用户可以读取。
+1. Open Terminal.
+2. Change to this extracted folder.
+3. Run: ./anti-bagu-agent
+4. The agent opens your browser for sign-in when needed.
+5. Keep the terminal window open while using Anti-Bagu.
 
-如果系统音频没有权限：
-1. 电脑助手会自动打开“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”。
-2. 找到“终端（Terminal）”或“anti-bagu-agent”，打开右侧开关。
-3. 完全退出电脑助手窗口，再重新双击“Start-Anti-Bagu.command”。
+The login session is stored in ~/.anti-bagu/session.json with owner-only
+permissions. Model service keys are managed on the website under Settings and
+are never requested by the CLI.
 
-首次使用完成后，以后只需双击“Start-Anti-Bagu.command”。
+PERMISSIONS
 
-如果 macOS 显示“Apple 无法验证”：
-1. 打开“系统设置”。
-2. 进入“隐私与安全性”。
-3. 在安全性区域点击“仍要打开”。
-4. 确认打开，然后重新双击“Start-Anti-Bagu.command”。
+The first launch requests two separate macOS permissions:
+
+- Screen & System Audio Recording, used for interview audio.
+- Microphone, used for your voice.
+
+After changing a permission, quit the agent completely and run it again.
+
+If interview audio is unavailable, open:
+
+System Settings > Privacy & Security > Screen & System Audio Recording
+
+Enable Terminal or anti-bagu-agent, depending on which item macOS displays.
+
+GATEKEEPER
+
+If macOS says Apple cannot verify anti-bagu-agent:
+
+1. Open System Settings > Privacy & Security.
+2. Find the blocked anti-bagu-agent message.
+3. Click Open Anyway.
+4. Run ./anti-bagu-agent again.
+
+COMMANDS
+
+./anti-bagu-agent          Start the agent
+./anti-bagu-agent status   Show account, audio, and permission status
+./anti-bagu-agent login    Sign in with a different account
+
+Set NO_COLOR=1 to disable colored output.

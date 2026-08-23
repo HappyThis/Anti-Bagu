@@ -74,7 +74,7 @@ enum AgentAPI {
               (200 ..< 300).contains(http.statusCode)
         else {
             let detail = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["detail"] as? String
-            throw AgentAPIError.requestFailed(detail ?? "无法完成登录")
+            throw AgentAPIError.requestFailed(detail ?? "The sign-in request could not be completed.")
         }
         return try JSONDecoder().decode(type, from: data)
     }

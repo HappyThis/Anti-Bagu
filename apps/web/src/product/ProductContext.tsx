@@ -43,7 +43,7 @@ interface ProductContextValue {
   loading: boolean
   error: string
   refreshTasks: () => Promise<void>
-  createTask: (name: string, mode: InterviewTask['mode'], mobileRequired: boolean) => Promise<string>
+  createTask: (name: string) => Promise<string>
   renameTask: (taskId: string, name: string) => Promise<void>
   updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>
   preflightTask: (taskId: string) => Promise<{ ready: boolean; checks: PreflightCheck[] }>
@@ -101,10 +101,10 @@ export function ProductProvider({ children }: { children: ReactNode }) {
     loading,
     error,
     refreshTasks,
-    async createTask(name, mode, mobileRequired) {
+    async createTask(name) {
       const task = await apiRequest<ApiTask>('/tasks', {
         method: 'POST',
-        body: JSON.stringify({ name, mode, mobile_required: mobileRequired }),
+        body: JSON.stringify({ name, mode: 'interview', mobile_required: false }),
       }, session?.token)
       setTasks((current) => [mapTask(task), ...current])
       return task.id

@@ -24,7 +24,7 @@ final class AudioFramePump: @unchecked Sendable {
                 do {
                     try await socket.send(packet: packet)
                 } catch {
-                    fputs("\(label) transport unavailable after retries: \(error)\n", stderr)
+                    CLIOutput.error("\(label) transport unavailable after retries: \(error)")
                 }
             }
         }

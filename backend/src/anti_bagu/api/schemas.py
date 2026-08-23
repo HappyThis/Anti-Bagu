@@ -47,7 +47,7 @@ class ModelCredentialUpdateRequest(BaseModel):
 class CreateTaskRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     mode: Literal["interview", "practice"] = "interview"
-    mobile_required: bool = True
+    mobile_required: bool = False
 
 
 class UpdateTaskRequest(BaseModel):

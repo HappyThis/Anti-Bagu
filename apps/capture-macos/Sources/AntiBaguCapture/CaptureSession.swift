@@ -88,7 +88,8 @@ actor CaptureSession {
         self.microphone = microphone
         aecSynchronizer = synchronizer
         activeTaskID = taskID
-        print("任务 \(taskID) 已开始 AEC3 双路采集")
+        CLIOutput.success("Dual-channel AEC3 capture started.")
+        CLIOutput.detail("Task: \(taskID)")
     }
 
     func stop() async {

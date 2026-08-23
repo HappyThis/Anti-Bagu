@@ -79,7 +79,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     }
 
     func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        fputs("System audio capture stopped: \(error)\n", stderr)
+        CLIOutput.warning("System audio capture stopped: \(error)")
     }
 }
 

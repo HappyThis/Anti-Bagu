@@ -94,7 +94,7 @@ class Task(Base):
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     mode: Mapped[str] = mapped_column(String(16), default="interview")
-    mobile_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    mobile_required: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now

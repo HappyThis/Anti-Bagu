@@ -9,8 +9,7 @@ import { AdminUsersPage } from '../product/admin/AdminUsersPage'
 import { AdminShell } from '../product/components/AdminShell'
 import { UserShell } from '../product/components/UserShell'
 import { AuthProvider, useAuth } from '../product/AuthContext'
-import { ProductProvider, useProduct } from '../product/ProductContext'
-import { CreateTaskPage } from '../product/pages/CreateTaskPage'
+import { ProductProvider } from '../product/ProductContext'
 import { DevicesPage } from '../product/pages/DevicesPage'
 import { LiveTaskPage } from '../product/pages/LiveTaskPage'
 import { LoginPage } from '../product/pages/LoginPage'
@@ -32,9 +31,9 @@ export function App() {
           <Route path="/agent/authorize" element={<AgentAuthorizePage />} />
 
           <Route element={<RequireUser><ProductProvider><UserShell /></ProductProvider></RequireUser>}>
-            <Route path="/tasks" element={<TaskIndexRedirect />} />
-            <Route path="/tasks/new" element={<CreateTaskPage />} />
-            <Route path="/tasks/:taskId" element={<TaskWorkspacePage />} />
+            <Route path="/tasks" element={<TaskWorkspacePage />} />
+            <Route path="/tasks/new" element={<Navigate to="/tasks" replace />} />
+            <Route path="/tasks/:taskId" element={<Navigate to="/tasks" replace />} />
             <Route path="/tasks/:taskId/live" element={<LiveTaskPage />} />
             <Route path="/reviews" element={<ReviewsPage />} />
             <Route path="/reviews/:reviewId" element={<ReviewDetailPage />} />
@@ -80,11 +79,4 @@ function HomeRedirect() {
   if (loading) return <div className="route-loading">正在确认登录状态…</div>
   if (!user) return <Navigate to="/login" replace />
   return <Navigate to={user.role === 'admin' ? '/admin' : '/tasks'} replace />
-}
-
-function TaskIndexRedirect() {
-  const { tasks, loading } = useProduct()
-  if (loading) return <div className="route-loading">正在加载任务…</div>
-  if (tasks[0]) return <Navigate to={`/tasks/${tasks[0].id}`} replace />
-  return <Navigate to="/tasks/new" replace />
 }

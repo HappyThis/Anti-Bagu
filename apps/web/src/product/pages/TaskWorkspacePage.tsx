@@ -2,17 +2,14 @@ import {
   ArrowClockwise,
   Check,
   Desktop,
-  DeviceMobile,
   DownloadSimple,
   Headphones,
-  LockKey,
-  PencilSimple,
   Play,
 } from '@phosphor-icons/react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import QRCode from 'react-qr-code'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 
 import { useProduct } from '../ProductContext'
 import type { PreflightCheck } from '../types'
@@ -29,29 +26,52 @@ const FAILURE_COPY: Record<string, string> = {
 }
 
 export function TaskWorkspacePage() {
-  const { taskId } = useParams()
   const navigate = useNavigate()
   const {
-    getTask,
+    tasks,
     loading,
+    createTask,
     renameTask,
     updateTaskStatus,
     preflightTask,
     getPreflight,
     getPairing,
   } = useProduct()
-  const task = getTask(taskId)
+  const task = useMemo(
+    () => tasks.find((item) => item.status !== 'completed'),
+    [tasks],
+  )
+  const taskId = task?.id
+  const creatingTaskRef = useRef(false)
   const [checking, setChecking] = useState(false)
-  const [renaming, setRenaming] = useState(false)
-  const [draftName, setDraftName] = useState(task?.name ?? '')
+  const [nameDialog, setNameDialog] = useState(false)
+  const [draftName, setDraftName] = useState('')
+  const [savingName, setSavingName] = useState(false)
   const [checks, setChecks] = useState<PreflightCheck[]>([])
   const [pairingUrl, setPairingUrl] = useState('')
   const [phoneConnected, setPhoneConnected] = useState(false)
-  const [showPhone, setShowPhone] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (loading || task || creatingTaskRef.current) return
+    creatingTaskRef.current = true
+    setError('')
+    createTask(defaultInterviewName())
+      .catch((requestError) => {
+        setError(requestError instanceof Error ? requestError.message : '暂时无法准备面试，请刷新后重试')
+        creatingTaskRef.current = false
+      })
+  }, [createTask, loading, task])
+
+  useEffect(() => {
     if (!taskId) return
+    getPreflight(taskId)
+      .then((result) => setChecks(result.checks))
+      .catch(() => setChecks([]))
+  }, [getPreflight, taskId])
+
+  useEffect(() => {
+    if (!taskId || !nameDialog) return
     let disposed = false
     async function refreshPairing() {
       try {
@@ -70,36 +90,19 @@ export function TaskWorkspacePage() {
       disposed = true
       window.clearInterval(timer)
     }
-  }, [getPairing, taskId])
-
-  useEffect(() => {
-    if (!taskId) return
-    getPreflight(taskId)
-      .then((result) => setChecks(result.checks))
-      .catch(() => setChecks([]))
-  }, [getPreflight, taskId])
+  }, [getPairing, nameDialog, taskId])
 
   const checkMap = useMemo(
     () => new Map(checks.map((check) => [check.key, check])),
     [checks],
   )
 
-  if (loading) return <div className="route-loading">正在加载面试…</div>
-  if (!task) return <Navigate to="/tasks" replace />
-  const activeTask = task
-  const ready = activeTask.status === 'ready'
-  const computerReady = checkMap.get('agent')?.ok === true
-  const soundKeys = ['system_audio', 'microphone', 'aec3', 'asr', 'llm']
-  const soundReady = soundKeys.every((key) => checkMap.get(key)?.ok === true)
-  const currentStep = ready ? 3 : computerReady ? 2 : 1
-  const firstProblem = checks.find((check) => !check.ok)
-  const progress = ready ? 3 : soundReady ? 2 : computerReady ? 1 : 0
-
   async function confirmReadiness() {
+    if (!task) return
     setChecking(true)
     setError('')
     try {
-      const result = await preflightTask(activeTask.id)
+      const result = await preflightTask(task.id)
       setChecks(result.checks)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : '暂时无法完成确认，请稍后重试')
@@ -108,43 +111,36 @@ export function TaskWorkspacePage() {
     }
   }
 
-  async function saveName() {
+  async function confirmName() {
     const name = draftName.trim()
-    if (name) await renameTask(activeTask.id, name)
-    setRenaming(false)
-  }
-
-  async function startInterview() {
+    if (!name) return
+    setSavingName(true)
     setError('')
     try {
-      await updateTaskStatus(activeTask.id, 'running')
-      navigate(`/tasks/${activeTask.id}/live`)
+      if (!task) return
+      if (name !== task.name) await renameTask(task.id, name)
+      await updateTaskStatus(task.id, 'running')
+      navigate(`/tasks/${task.id}/live`)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : '暂时无法开始，请重新确认')
+      setError(requestError instanceof Error ? requestError.message : '暂时无法继续，请稍后重试')
+    } finally {
+      setSavingName(false)
     }
   }
 
+  if (loading) return <div className="route-loading">正在加载面试…</div>
+  if (!task) return <div className="route-loading">{error || '正在准备面试…'}</div>
+  const activeTask = task
+  if (activeTask.status === 'running') return <Navigate to={`/tasks/${activeTask.id}/live`} replace />
+  const ready = activeTask.status === 'ready'
+  const computerReady = checkMap.get('agent')?.ok === true
+  const soundKeys = ['system_audio', 'microphone', 'aec3', 'asr', 'llm']
+  const soundReady = soundKeys.every((key) => checkMap.get(key)?.ok === true)
+  const currentStep = ready ? 3 : computerReady ? 2 : 1
+  const firstProblem = checks.find((check) => !check.ok)
+
   return (
     <section className="interview-prep-page">
-      <header className="prep-header">
-        <span className="eyebrow">准备面试</span>
-        <div className="task-title-row task-title-row--centered">
-          {renaming ? (
-            <div className="rename-control">
-              <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => {
-                if (event.key === 'Enter') void saveName()
-                if (event.key === 'Escape') setRenaming(false)
-              }} />
-              <button type="button" onClick={() => void saveName()}>保存</button>
-            </div>
-          ) : (
-            <><h1>准备{activeTask.name}</h1><button className="rename-button" type="button" onClick={() => { setDraftName(activeTask.name); setRenaming(true) }}><PencilSimple size={18} />修改名称</button></>
-          )}
-        </div>
-        <p>三步完成准备，轻松开启面试。</p>
-        <strong className="prep-progress">完成 <b>{progress}</b> / 3</strong>
-      </header>
-
       <div className="prep-steps" aria-label="面试准备步骤">
         <PreparationStep number={1} title="打开电脑助手" description="下载并打开后会自动连接，无需了解复杂设置。" icon={<Desktop size={34} />} active={currentStep === 1} complete={computerReady} />
 
@@ -153,7 +149,7 @@ export function TaskWorkspacePage() {
         </PreparationStep>
 
         <PreparationStep number={3} title="开始面试" description="一切准备好后，由你亲自点击开始。" icon={<Play size={34} weight="fill" />} active={currentStep === 3} complete={false} locked={!ready}>
-          {ready ? <button className="primary-action prep-start" type="button" onClick={() => void startInterview()}><Play size={21} weight="fill" />开始面试</button> : null}
+          {ready ? <button className="primary-action prep-start" type="button" onClick={() => { setDraftName(''); setNameDialog(true) }}><Play size={21} weight="fill" />开始面试</button> : null}
         </PreparationStep>
       </div>
 
@@ -163,17 +159,64 @@ export function TaskWorkspacePage() {
       </section> : null}
 
       {firstProblem && firstProblem.key !== 'agent' ? <div className="prep-guidance" role="status"><span>{FAILURE_COPY[firstProblem.key] ?? '还有一项没有准备好'}</span><small>按当前步骤完成后，再点击确认。</small></div> : null}
-      {error ? <div className="form-error prep-error" role="alert">{error}</div> : null}
+      {error && !nameDialog ? <div className="form-error prep-error" role="alert">{error}</div> : null}
 
-      <div className="phone-setup-row">
-        <DeviceMobile size={28} />
-        <div><strong>想在手机上看回答？</strong><span>{phoneConnected ? '手机已经连接，面试开始后会同步显示回答。' : '连接后，可以在手机上实时查看回答内容。'}</span></div>
-        <button className="secondary-action compact-action" type="button" onClick={() => setShowPhone((current) => !current)}>{phoneConnected ? '查看二维码' : '连接手机'}</button>
-      </div>
-      {showPhone ? <div className="inline-phone-pairing"><div className="qr-surface">{pairingUrl ? <QRCode bgColor="#ffffff" fgColor="#101d33" size={184} value={pairingUrl} /> : <span className="qr-loading">正在生成二维码…</span>}</div><div><strong>用手机扫码</strong><span>打开后保持页面在线即可。</span><em className={phoneConnected ? 'paired-state' : ''}>{phoneConnected ? '已连接' : '等待连接'}</em></div></div> : null}
-      <p className="gated-note"><LockKey size={15} />只有你点击“开始面试”后，电脑助手才会开始工作</p>
+      {nameDialog ? <InterviewNameDialog name={draftName} pairingUrl={pairingUrl} phoneConnected={phoneConnected} saving={savingName} error={error} onChange={setDraftName} onCancel={() => { setNameDialog(false); setError('') }} onConfirm={() => void confirmName()} /> : null}
     </section>
   )
+}
+
+function InterviewNameDialog({
+  name,
+  pairingUrl,
+  phoneConnected,
+  saving,
+  error,
+  onChange,
+  onCancel,
+  onConfirm,
+}: {
+  name: string
+  pairingUrl: string
+  phoneConnected: boolean
+  saving: boolean
+  error: string
+  onChange: (name: string) => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel() }}>
+      <section className="interview-name-dialog interview-name-dialog--with-phone" role="dialog" aria-modal="true" aria-labelledby="interview-name-title">
+        <div className="interview-name-dialog-grid">
+          <div className="interview-name-form">
+            <span className="eyebrow">最后一步</span>
+            <h2 id="interview-name-title">确认面试名称</h2>
+            <p>这个名称只用于之后查找面试记录。</p>
+            <label><span>面试名称</span><input autoFocus value={name} placeholder="例如：字节跳动后端二面" onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => {
+              if (event.key === 'Enter' && name.trim()) onConfirm()
+              if (event.key === 'Escape') onCancel()
+            }} /></label>
+            {error ? <div className="form-error" role="alert">{error}</div> : null}
+          </div>
+          <aside className="interview-name-phone" aria-label="手机二维码">
+            <strong>手机查看回答</strong>
+            <span>扫码后保持页面在线</span>
+            <div className="qr-surface">{pairingUrl ? <QRCode bgColor="#ffffff" fgColor="#101d33" size={154} value={pairingUrl} /> : <span className="qr-loading">正在生成二维码…</span>}</div>
+            <em className={phoneConnected ? 'paired-state' : ''}>{phoneConnected ? '手机已连接' : '等待手机连接'}</em>
+          </aside>
+        </div>
+        <div className="dialog-actions"><button className="secondary-action" type="button" onClick={onCancel}>取消</button><button className="primary-action" type="button" disabled={!name.trim() || saving} onClick={onConfirm}>{saving ? '正在处理…' : '确认并开始'}</button></div>
+      </section>
+    </div>
+  )
+}
+
+function defaultInterviewName() {
+  const now = new Date()
+  const date = now.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }).replaceAll('/', '-')
+  const time = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `面试 ${date} ${time}`
 }
 
 function PreparationStep({

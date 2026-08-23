@@ -63,11 +63,11 @@ enum AEC3Error: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .initializationFailed:
-            "AEC3 音频处理初始化失败"
+            "AEC3 audio processing could not be initialized."
         case .invalidFrameSize:
-            "AEC3 收到了错误长度的音频帧"
+            "AEC3 received an audio frame with an invalid size."
         case let .processingFailed(code):
-            "AEC3 音频处理失败（\(code)）"
+            "AEC3 audio processing failed with code \(code)."
         }
     }
 }

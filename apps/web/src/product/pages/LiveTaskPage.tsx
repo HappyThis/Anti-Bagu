@@ -1,5 +1,6 @@
-import { Pause, Play, Stop } from '@phosphor-icons/react'
-import { useState } from 'react'
+import { DeviceMobile, Pause, Play, Stop, X } from '@phosphor-icons/react'
+import { useEffect, useState } from 'react'
+import QRCode from 'react-qr-code'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { AnswerWorkspace } from '../../features/answer/AnswerWorkspace'
@@ -13,7 +14,7 @@ import { useProduct } from '../ProductContext'
 export function LiveTaskPage() {
   const { taskId } = useParams()
   const navigate = useNavigate()
-  const { getTask, loading, updateTaskStatus } = useProduct()
+  const { getTask, getPairing, loading, updateTaskStatus } = useProduct()
   const { session } = useAuth()
   const task = getTask(taskId)
   const realtimeUrl = taskId && session
@@ -21,6 +22,31 @@ export function LiveTaskPage() {
     : ''
   const { state, clear } = useRealtimeSession(realtimeUrl)
   const [paused, setPaused] = useState(false)
+  const [showPhone, setShowPhone] = useState(false)
+  const [pairingUrl, setPairingUrl] = useState('')
+  const [phoneConnected, setPhoneConnected] = useState(false)
+
+  useEffect(() => {
+    if (!taskId) return
+    let disposed = false
+    async function refreshPairing() {
+      try {
+        const pairing = await getPairing(taskId as string)
+        if (!disposed) {
+          setPairingUrl(pairing.url)
+          setPhoneConnected(pairing.connected)
+        }
+      } catch {
+        if (!disposed) setPairingUrl('')
+      }
+    }
+    void refreshPairing()
+    const timer = window.setInterval(refreshPairing, 3000)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [getPairing, taskId])
 
   if (loading) return <div className="route-loading">正在加载面试…</div>
   if (!task) return <Navigate to="/tasks" replace />
@@ -52,6 +78,9 @@ export function LiveTaskPage() {
           </span>
         </div>
         <div className="live-actions">
+          <button className={`secondary-action live-phone-action ${phoneConnected ? 'live-phone-action--connected' : ''}`} type="button" onClick={() => setShowPhone(true)}>
+            <DeviceMobile size={19} />{phoneConnected ? '手机已连接' : '手机二维码'}
+          </button>
           <button className="secondary-action" type="button" onClick={togglePause}>
             {paused ? <Play size={19} weight="fill" /> : <Pause size={19} weight="fill" />}
             {paused ? '继续' : '暂停'}
@@ -90,6 +119,22 @@ export function LiveTaskPage() {
         onClear={clear}
       />
       <DiagnosticsBar latency={state.latency} />
+      {showPhone ? <PhonePairingDialog pairingUrl={pairingUrl} connected={phoneConnected} onClose={() => setShowPhone(false)} /> : null}
+    </div>
+  )
+}
+
+function PhonePairingDialog({ pairingUrl, connected, onClose }: { pairingUrl: string; connected: boolean; onClose: () => void }) {
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="phone-pairing-dialog" role="dialog" aria-modal="true" aria-labelledby="phone-pairing-title">
+        <button className="dialog-close" type="button" aria-label="关闭手机二维码" onClick={onClose}><X size={20} /></button>
+        <span className="dialog-phone-icon"><DeviceMobile size={25} /></span>
+        <h2 id="phone-pairing-title">用手机查看回答</h2>
+        <p>使用手机扫码，打开后保持页面在线即可。</p>
+        <div className="qr-surface">{pairingUrl ? <QRCode bgColor="#ffffff" fgColor="#101d33" size={184} value={pairingUrl} /> : <span className="qr-loading">正在生成二维码…</span>}</div>
+        <em className={connected ? 'paired-state' : ''}>{connected ? '手机已连接' : '等待手机连接'}</em>
+      </section>
     </div>
   )
 }

@@ -45,10 +45,10 @@ struct CapturePermissions: Sendable {
 
     static var permissionOwnerHint: String {
         switch ProcessInfo.processInfo.environment["TERM_PROGRAM"] {
-        case "Apple_Terminal": "终端（Terminal）"
+        case "Apple_Terminal": "Terminal"
         case "iTerm.app": "iTerm"
         case "WarpTerminal": "Warp"
-        default: "anti-bagu-agent 或启动它的终端"
+        default: "anti-bagu-agent or the terminal that launched it"
         }
     }
 

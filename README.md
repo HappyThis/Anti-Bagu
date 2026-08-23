@@ -54,8 +54,7 @@ make dev-capture
 桌面 Agent 首次使用：
 
 ```bash
-swift run --package-path apps/capture-macos anti-bagu-agent login --server https://101.42.92.125 --username <用户名>
-swift run --package-path apps/capture-macos anti-bagu-agent configure-models
+swift run --package-path apps/capture-macos anti-bagu-agent login --server https://101.42.92.125
 swift run --package-path apps/capture-macos anti-bagu-agent start
 ```
 

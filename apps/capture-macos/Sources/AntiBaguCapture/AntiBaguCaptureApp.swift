@@ -18,24 +18,26 @@ struct AntiBaguCaptureApp {
             case "help", "--help", "-h":
                 printUsage()
             default:
-                fputs("未知命令：\(command)\n", stderr)
+                CLIOutput.error("Unknown command: \(command)")
                 printUsage()
             }
         } catch {
-            fputs("Anti-Bagu Agent 错误：\(error)\n", stderr)
+            CLIOutput.error("Anti-Bagu Agent failed: \(error)")
             exit(1)
         }
     }
 
     private static func login(arguments: [String]) async throws {
+        CLIOutput.banner()
+        CLIOutput.section("Account")
         let options = parseOptions(arguments)
         let server = options["server"] ?? "https://101.42.92.125"
         guard let serverURL = URL(string: server) else {
-            throw CLIError.usage("服务地址无效")
+            throw CLIError.usage("The server URL is invalid.")
         }
         let localHosts = Set(["127.0.0.1", "localhost", "::1"])
         if serverURL.scheme != "https", !localHosts.contains(serverURL.host ?? "") {
-            throw CLIError.usage("远程登录必须使用 HTTPS")
+            throw CLIError.usage("Remote login requires HTTPS.")
         }
         _ = try await browserLogin(serverURL: serverURL)
     }
@@ -43,38 +45,39 @@ struct AntiBaguCaptureApp {
     private static func showStatus() throws {
         let configuration = try? AgentConfiguration.load()
         let session = try AgentSession.load()
-        print("服务：\(configuration?.serverURL.absoluteString ?? "未配置")")
-        print("用户：\(configuration?.username ?? "未登录")")
-        print("登录状态：\(session == nil ? "未登录" : "已登录")")
-        print("回声消除：\(AEC3NativeProcessor.isAvailable() ? "已准备" : "缺少组件")")
         let permissions = CapturePermissions.current()
-        print("面试声音：\(permissions.screenCaptureGranted ? "已允许" : "需要允许")")
-        print("我的声音：\(permissions.microphoneGranted ? "已允许" : "需要允许")")
+        CLIOutput.banner()
+        CLIOutput.section("Account")
+        CLIOutput.row("Server", configuration?.serverURL.absoluteString ?? "Not configured")
+        CLIOutput.row("User", configuration?.username ?? "Not signed in")
+        CLIOutput.row("Session", session == nil ? "Not signed in" : "Signed in", healthy: session != nil)
+        CLIOutput.section("Audio")
+        CLIOutput.row("Echo cancellation", AEC3NativeProcessor.isAvailable() ? "Ready" : "Component missing", healthy: AEC3NativeProcessor.isAvailable())
+        CLIOutput.row("Interview audio", permissions.screenCaptureGranted ? "Allowed" : "Permission required", healthy: permissions.screenCaptureGranted)
+        CLIOutput.row("Microphone", permissions.microphoneGranted ? "Allowed" : "Permission required", healthy: permissions.microphoneGranted)
     }
 
     private static func startAgent() async throws {
+        CLIOutput.banner()
         let (configuration, token) = try await ensureAccount()
         let permissions = await CapturePermissions.request()
+        CLIOutput.section("Permissions")
+        CLIOutput.row("Interview audio", permissions.screenCaptureGranted ? "Allowed" : "Permission required", healthy: permissions.screenCaptureGranted)
+        CLIOutput.row("Microphone", permissions.microphoneGranted ? "Allowed" : "Permission required", healthy: permissions.microphoneGranted)
+        CLIOutput.row("Echo cancellation", AEC3NativeProcessor.isAvailable() ? "Ready" : "Component missing", healthy: AEC3NativeProcessor.isAvailable())
         if !permissions.screenCaptureGranted {
             let owner = CapturePermissions.permissionOwnerHint
-            fputs("""
-
-            尚未允许获取面试声音。
-            已打开“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”。
-            请在列表中找到“\(owner)”并打开开关，然后完全退出电脑助手并重新打开。
-            如果列表中没有它，请先关闭系统设置，再重新运行一次电脑助手。
-
-            """, stderr)
+            CLIOutput.warning("Screen & System Audio Recording permission is required.")
+            CLIOutput.detail("Open System Settings > Privacy & Security > Screen & System Audio Recording.")
+            CLIOutput.detail("Enable \(owner), then quit and restart the agent.")
+            CLIOutput.detail("If it is not listed, close System Settings and run the agent again.")
             _ = await CapturePermissions.openScreenCaptureSettings()
         }
         if !permissions.microphoneGranted {
             let owner = CapturePermissions.permissionOwnerHint
-            fputs("""
-
-            尚未允许获取你的声音。
-            请在“系统设置 → 隐私与安全性 → 麦克风”中找到“\(owner)”并打开开关，随后重新打开电脑助手。
-
-            """, stderr)
+            CLIOutput.warning("Microphone permission is required.")
+            CLIOutput.detail("Open System Settings > Privacy & Security > Microphone.")
+            CLIOutput.detail("Enable \(owner), then restart the agent.")
             if permissions.screenCaptureGranted {
                 _ = await CapturePermissions.openMicrophoneSettings()
             }
@@ -90,12 +93,14 @@ struct AntiBaguCaptureApp {
                     try await client.run()
                 } catch {
                     if Task.isCancelled { return }
-                    fputs("控制通道断开，1 秒后重连：\(error)\n", stderr)
+                    CLIOutput.warning("Control channel disconnected; retrying in 1 second. \(error)")
                     try? await Task.sleep(for: .seconds(1))
                 }
             }
         }
-        print("Anti-Bagu 电脑助手已经打开，正在等待面试。按 Ctrl+C 停止。")
+        CLIOutput.section("Agent")
+        CLIOutput.success("Ready and waiting for an interview.")
+        CLIOutput.detail("Press Ctrl+C to stop.")
         await waitForInterrupt()
         runner.cancel()
         await client.close()
@@ -109,12 +114,9 @@ struct AntiBaguCaptureApp {
             return (configuration, session.token)
         }
 
-        print("""
-
-        欢迎使用 Anti-Bagu 电脑助手
-        即将打开网页登录。首次允许后，以后打开会自动连接。
-
-        """)
+        CLIOutput.section("Sign in")
+        CLIOutput.info("Opening the browser to connect your account.")
+        CLIOutput.detail("After the first approval, future launches will connect automatically.")
         let serverURL = URL(string: "https://101.42.92.125")!
         return try await browserLogin(serverURL: serverURL)
     }
@@ -124,15 +126,15 @@ struct AntiBaguCaptureApp {
     ) async throws -> (AgentConfiguration, String) {
         let authorization = try await AgentAPI.beginBrowserAuthorization(serverURL: serverURL)
         guard let verificationURL = URL(string: authorization.verificationURL) else {
-            throw CLIError.usage("服务返回了无效的登录地址")
+            throw CLIError.usage("The server returned an invalid login URL.")
         }
         let opened = await MainActor.run {
             NSWorkspace.shared.open(verificationURL)
         }
         guard opened else {
-            throw CLIError.usage("无法打开浏览器，请手动访问：\(verificationURL.absoluteString)")
+            throw CLIError.usage("Could not open the browser. Visit this URL manually: \(verificationURL.absoluteString)")
         }
-        print("已打开浏览器，请在网页中确认登录。")
+        CLIOutput.info("Browser opened. Approve the sign-in request on the website.")
 
         let pollNanoseconds = UInt64(max(1, authorization.pollIntervalSeconds) * 1_000_000_000)
         while Date().timeIntervalSince1970 < authorization.expiresAt {
@@ -151,28 +153,28 @@ struct AntiBaguCaptureApp {
                       !tokenExpiresAt.isEmpty,
                       !username.isEmpty
                 else {
-                    throw CLIError.usage("登录结果不完整，请重新登录")
+                    throw CLIError.usage("The login response was incomplete. Please sign in again.")
                 }
                 let configuration = AgentConfiguration(serverURL: serverURL, username: username)
                 let session = AgentSession(token: token, expiresAt: tokenExpiresAt)
                 guard session.isValid else {
-                    throw CLIError.usage("登录结果已过期，请重新登录")
+                    throw CLIError.usage("The login session has expired. Please sign in again.")
                 }
                 try configuration.save()
                 try session.save()
-                print("登录成功，账号：\(username)。")
+                CLIOutput.success("Signed in as \(username).")
                 return (configuration, token)
             case "expired":
-                throw CLIError.usage("网页登录已超时，请重新运行电脑助手")
+                throw CLIError.usage("Browser sign-in timed out. Run the agent again.")
             case "cancelled":
-                throw CLIError.usage("你已在网页中取消登录")
+                throw CLIError.usage("The sign-in request was cancelled in the browser.")
             case "consumed":
-                throw CLIError.usage("这次登录已被使用，请重新运行电脑助手")
+                throw CLIError.usage("This sign-in request was already used. Run the agent again.")
             default:
                 continue
             }
         }
-        throw CLIError.usage("网页登录已超时，请重新运行电脑助手")
+        throw CLIError.usage("Browser sign-in timed out. Run the agent again.")
     }
 
     private static func parseOptions(_ arguments: [String]) -> [String: String] {
@@ -203,15 +205,14 @@ struct AntiBaguCaptureApp {
     }
 
     private static func printUsage() {
-        print("""
-        Anti-Bagu 桌面 Agent
-
-          anti-bagu-agent              首次使用会自动引导，之后直接启动
-          anti-bagu-agent status       查看当前准备状态
-          anti-bagu-agent login        更换登录账号
-
-        登录凭据保存在 ~/.anti-bagu/session.json；模型服务密钥请在网页“设置”中管理。
-        """)
+        CLIOutput.banner()
+        CLIOutput.section("Commands")
+        CLIOutput.row("anti-bagu-agent", "Start the agent; first launch guides you through sign-in")
+        CLIOutput.row("... status", "Show account, audio, and permission status")
+        CLIOutput.row("... login", "Sign in with a different account")
+        CLIOutput.section("Storage")
+        CLIOutput.detail("Login session: ~/.anti-bagu/session.json")
+        CLIOutput.detail("Model keys are managed on the website under Settings.")
     }
 }
 

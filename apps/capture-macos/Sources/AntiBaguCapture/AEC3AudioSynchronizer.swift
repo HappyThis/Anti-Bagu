@@ -86,7 +86,7 @@ final class AEC3AudioSynchronizer: @unchecked Sendable {
             do {
                 pendingOutput.append(try processor.process(render: render, capture: capture))
             } catch {
-                fputs("AEC3 processing failed: \(error)\n", stderr)
+                CLIOutput.error("AEC3 processing failed: \(error)")
                 pendingOutput.append(Self.silence)
             }
             nextSlot = slot + 1

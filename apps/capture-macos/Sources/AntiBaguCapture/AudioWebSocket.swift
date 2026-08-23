@@ -93,7 +93,7 @@ actor AudioWebSocket {
         guard task === socket else { return }
         task = nil
         if !intentionallyClosed {
-            fputs("Audio socket disconnected, next frame will reconnect: \(error)\n", stderr)
+            CLIOutput.warning("Audio channel disconnected; the next frame will retry. \(error)")
         }
     }
 }
