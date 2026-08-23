@@ -18,7 +18,12 @@ from anti_bagu.interview.events import (
 )
 from anti_bagu.interview.sink import EventSink
 from anti_bagu.interview.state import SessionState
-from anti_bagu.llm.base import InterviewResponder
+from anti_bagu.llm.base import (
+    InterviewResponder,
+    InterviewResponse,
+    ModelOutputFailure,
+    ModelOutputRetriesExhausted,
+)
 
 ScreenshotStatusHandler = Callable[[dict[str, object]], Awaitable[None]]
 
@@ -53,6 +58,7 @@ class InterviewCoordinator:
         self._screenshot_task: asyncio.Task[None] | None = None
         self._focus_generation = 0
         self._last_started_turn_id = 0
+        self._last_analyzed_turn_id = 0
         self._coalesce_started_at: float | None = None
         self._last_interviewer_activity_at: float | None = None
         self._last_interviewer_audio_end: float | None = None
@@ -153,6 +159,7 @@ class InterviewCoordinator:
         prompt = self._prompt_builder.build(
             turns=self.store.turns,
             focuses=self.store.focuses,
+            after_turn_id=self._last_analyzed_turn_id,
         )
         self._focus_generation += 1
         generation = self._focus_generation
@@ -336,6 +343,7 @@ class InterviewCoordinator:
         prompt = self._prompt_builder.build(
             turns=self.store.turns,
             focuses=self.store.focuses,
+            after_turn_id=self._last_analyzed_turn_id,
         )
         self._focus_generation += 1
         generation = self._focus_generation
@@ -345,6 +353,7 @@ class InterviewCoordinator:
             "focus.started",
             {
                 "generation": generation,
+                "analysis_after_turn_id": prompt.analysis_after_turn_id,
                 "dialogue_start_turn_id": prompt.dialogue_start_turn_id,
                 "through_turn_id": prompt.through_turn_id,
                 "included_turn_count": len(prompt.included_turn_ids),
@@ -374,9 +383,14 @@ class InterviewCoordinator:
     ) -> None:
         model_started_at = time.time()
         try:
-            result = await asyncio.wait_for(
+            response = await asyncio.wait_for(
                 self._responder.respond(prompt=prompt.markdown),
                 timeout=self._focus_timeout_seconds,
+            )
+            result = await self._unpack_response(
+                response,
+                operation="focus",
+                generation=generation,
             )
             duration_ms = max(0.0, (time.time() - model_started_at) * 1000)
             if generation != self._focus_generation:
@@ -412,6 +426,9 @@ class InterviewCoordinator:
             )
 
             if isinstance(result, WaitResult):
+                self._last_analyzed_turn_id = max(
+                    self._last_analyzed_turn_id, prompt.through_turn_id
+                )
                 self.state = SessionState.LISTENING
                 await self._emit(
                     "focus.wait",
@@ -423,11 +440,50 @@ class InterviewCoordinator:
                 )
                 return
 
-            committed = self.store.commit_focus(
-                question=result.question,
-                recommended_answer=result.answer,
-                source_end_turn_id=prompt.through_turn_id,
-                code=result.code,
+            current = self.store.current_committed_focus
+            same_question = current is not None and self._same_question(
+                current.question, result.question
+            )
+            next_code = (
+                result.code
+                if result.code is not None
+                else current.code if same_question and current is not None else None
+            )
+            self._last_analyzed_turn_id = max(
+                self._last_analyzed_turn_id, prompt.through_turn_id
+            )
+            if (
+                same_question
+                and current is not None
+                and current.recommended_answer == result.answer
+                and current.code == next_code
+            ):
+                self.state = SessionState.LISTENING
+                await self._emit(
+                    "focus.unchanged",
+                    {
+                        "focus_id": current.focus_id,
+                        "generation": generation,
+                        "question": current.question,
+                        "through_turn_id": prompt.through_turn_id,
+                        "reason": "model_result_unchanged",
+                    },
+                )
+                return
+
+            committed = (
+                self.store.update_current_focus(
+                    recommended_answer=result.answer,
+                    source_end_turn_id=prompt.through_turn_id,
+                    code=next_code,
+                )
+                if same_question
+                else self.store.commit_focus(
+                    question=result.question,
+                    recommended_answer=result.answer,
+                    source_end_turn_id=prompt.through_turn_id,
+                    code=result.code,
+                )
             )
             await self._emit(
                 "focus.updated",
@@ -440,6 +496,7 @@ class InterviewCoordinator:
                     "has_code": bool(committed.code),
                     "source_start_turn_id": committed.source_start_turn_id,
                     "source_end_turn_id": committed.source_end_turn_id,
+                    "update_kind": "revised" if same_question else "new",
                 },
             )
             self.state = SessionState.ANSWERING
@@ -459,6 +516,23 @@ class InterviewCoordinator:
             self.state = SessionState.LISTENING
         except asyncio.CancelledError:
             raise
+        except ModelOutputRetriesExhausted as exc:
+            if generation == self._focus_generation:
+                self.state = SessionState.LISTENING
+                await self._emit_output_failures(
+                    exc.failures,
+                    operation="focus",
+                    generation=generation,
+                )
+                await self._emit(
+                    "focus.abandoned",
+                    {
+                        "generation": generation,
+                        "through_turn_id": prompt.through_turn_id,
+                        "reason": "model_output_invalid_after_retry",
+                        "attempts": len(exc.failures),
+                    },
+                )
         except TimeoutError:
             if generation == self._focus_generation:
                 self.state = SessionState.LISTENING
@@ -505,13 +579,19 @@ class InterviewCoordinator:
         model_started_at = time.time()
         outcome = "completed"
         try:
-            result = await asyncio.wait_for(
+            response = await asyncio.wait_for(
                 self._responder.respond(
                     prompt=prompt.markdown,
                     image_data=image_data,
                     mime_type=mime_type,
                 ),
                 timeout=self._screenshot_timeout_seconds,
+            )
+            result = await self._unpack_response(
+                response,
+                operation="screenshot_focus",
+                generation=generation,
+                screenshot_id=screenshot_id,
             )
             duration_ms = max(0.0, (time.time() - model_started_at) * 1000)
             await self._emit(
@@ -538,6 +618,9 @@ class InterviewCoordinator:
             )
             if isinstance(result, WaitResult):
                 outcome = "no_question"
+                self._last_analyzed_turn_id = max(
+                    self._last_analyzed_turn_id, prompt.through_turn_id
+                )
                 await self._emit(
                     "focus.wait",
                     {
@@ -550,13 +633,56 @@ class InterviewCoordinator:
                 )
                 return
 
-            committed = self.store.commit_focus(
-                question=result.question,
-                recommended_answer=result.answer,
-                source_end_turn_id=prompt.through_turn_id,
-                code=result.code,
-                source=FocusSource.SCREENSHOT,
-                screenshot_id=screenshot_id,
+            current = self.store.current_committed_focus
+            same_question = current is not None and self._same_question(
+                current.question, result.question
+            )
+            next_code = (
+                result.code
+                if result.code is not None
+                else current.code if same_question and current is not None else None
+            )
+            self._last_analyzed_turn_id = max(
+                self._last_analyzed_turn_id, prompt.through_turn_id
+            )
+            if (
+                same_question
+                and current is not None
+                and current.recommended_answer == result.answer
+                and current.code == next_code
+            ):
+                outcome = "completed"
+                await self._emit(
+                    "focus.unchanged",
+                    {
+                        "focus_id": current.focus_id,
+                        "generation": generation,
+                        "question": current.question,
+                        "source": FocusSource.SCREENSHOT.value,
+                        "screenshot_id": screenshot_id,
+                        "through_turn_id": prompt.through_turn_id,
+                        "reason": "model_result_unchanged",
+                    },
+                )
+                return
+
+            committed = (
+                self.store.update_current_focus(
+                    recommended_answer=result.answer,
+                    source_end_turn_id=prompt.through_turn_id,
+                    code=next_code,
+                    source=FocusSource.SCREENSHOT,
+                    screenshot_id=screenshot_id,
+                )
+                if same_question
+                else self.store.commit_focus(
+                    question=result.question,
+                    recommended_answer=result.answer,
+                    source_end_turn_id=prompt.through_turn_id,
+                    code=result.code,
+                    source=FocusSource.SCREENSHOT,
+                    screenshot_id=screenshot_id,
+                )
             )
             await self._emit(
                 "focus.updated",
@@ -570,6 +696,7 @@ class InterviewCoordinator:
                     "has_code": bool(committed.code),
                     "source_start_turn_id": committed.source_start_turn_id,
                     "source_end_turn_id": committed.source_end_turn_id,
+                    "update_kind": "revised" if same_question else "new",
                 },
             )
             await self._emit_model_latency(model_started_at)
@@ -589,6 +716,25 @@ class InterviewCoordinator:
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
+        except ModelOutputRetriesExhausted as exc:
+            outcome = "abandoned"
+            await self._emit_output_failures(
+                exc.failures,
+                operation="screenshot_focus",
+                generation=generation,
+                screenshot_id=screenshot_id,
+            )
+            await self._emit(
+                "focus.abandoned",
+                {
+                    "generation": generation,
+                    "source": FocusSource.SCREENSHOT.value,
+                    "screenshot_id": screenshot_id,
+                    "through_turn_id": prompt.through_turn_id,
+                    "reason": "model_output_invalid_after_retry",
+                    "attempts": len(exc.failures),
+                },
+            )
         except TimeoutError:
             outcome = "timeout"
             await self._emit(
@@ -680,6 +826,62 @@ class InterviewCoordinator:
                 0.0, (now - self._last_interviewer_audio_end) * 1000
             )
         await self._emit("latency.updated", payload)
+
+    async def _unpack_response(
+        self,
+        response: object,
+        *,
+        operation: str,
+        generation: int,
+        screenshot_id: str = "",
+    ):
+        if not isinstance(response, InterviewResponse):
+            return response
+        if response.output_failures:
+            await self._emit_output_failures(
+                response.output_failures,
+                operation=operation,
+                generation=generation,
+                screenshot_id=screenshot_id,
+            )
+            await self._emit(
+                "focus.retry_succeeded",
+                {
+                    "generation": generation,
+                    "operation": operation,
+                    "screenshot_id": screenshot_id,
+                    "failed_attempts": len(response.output_failures),
+                },
+            )
+        return response.result
+
+    async def _emit_output_failures(
+        self,
+        failures: tuple[ModelOutputFailure, ...],
+        *,
+        operation: str,
+        generation: int,
+        screenshot_id: str = "",
+    ) -> None:
+        for failure in failures:
+            await self._emit(
+                "internal.llm.output_invalid",
+                {
+                    "operation": operation,
+                    "generation": generation,
+                    "screenshot_id": screenshot_id,
+                    "attempt": failure.attempt,
+                    "finish_reason": failure.finish_reason,
+                    "error_type": failure.error_type,
+                    "error_message": failure.error_message,
+                    "raw_content": failure.raw_content,
+                },
+            )
+
+    @staticmethod
+    def _same_question(left: str, right: str) -> bool:
+        punctuation = " \t\r\n。！？!?，,；;：:、"
+        return left.strip(punctuation).casefold() == right.strip(punctuation).casefold()
 
     async def _emit(self, event_type: str, payload: dict[str, object]) -> None:
         await self._sink.publish(

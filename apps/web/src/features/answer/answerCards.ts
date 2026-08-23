@@ -13,6 +13,7 @@ export interface AnswerCard {
 }
 
 const ANSWER_EVENTS = new Set([
+  'answer.snapshot',
   'focus.updated',
   'answer.started',
   'answer.delta',
@@ -24,6 +25,27 @@ const ANSWER_EVENTS = new Set([
 export function applyAnswerEvent(cards: AnswerCard[], event: RealtimeEvent): AnswerCard[] {
   if (!ANSWER_EVENTS.has(event.type)) return cards
   const payload = event.payload
+  if (event.type === 'answer.snapshot') {
+    if (!Array.isArray(payload.cards)) return cards
+    return payload.cards.flatMap((value) => {
+      if (!value || typeof value !== 'object') return []
+      const card = value as Record<string, unknown>
+      const id = String(card.id ?? '').trim()
+      const question = String(card.question ?? '').trim()
+      if (!id || !question) return []
+      return [{
+        id,
+        question,
+        answer: String(card.answer ?? ''),
+        code: String(card.code ?? ''),
+        source: String(card.source ?? 'VOICE'),
+        generating: false,
+        cancelled: Boolean(card.cancelled),
+        error: '',
+        createdAt: Number(card.created_at ?? event.created_at),
+      }]
+    })
+  }
   if (event.type === 'focus.updated') {
     const question = String(payload.question ?? '').trim()
     if (!question) return cards
@@ -38,7 +60,7 @@ export function applyAnswerEvent(cards: AnswerCard[], event: RealtimeEvent): Ans
       })
     }
     return [
-      ...cards.slice(-49),
+      ...cards,
       {
         id: focusID,
         question,

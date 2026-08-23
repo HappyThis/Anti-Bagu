@@ -84,10 +84,10 @@ async def task_ui(websocket: WebSocket, task_id: str) -> None:
             payload={"status": task.status},
         ).model_dump(mode="json")
     )
-    await _send_answer_history(websocket, task_id)
     receive_task: asyncio.Task[dict[str, object]] | None = None
     try:
         async with runtime.event_hub.subscribe() as queue:
+            await _send_answer_snapshot(websocket, task_id, runtime)
             receive_task = asyncio.create_task(websocket.receive())
             while True:
                 event_task = asyncio.create_task(queue.get())
@@ -120,6 +120,16 @@ async def mobile_answers(websocket: WebSocket, pairing_token: str) -> None:
     if pairing is None:
         await websocket.close(code=4404, reason="pairing expired")
         return
+    async with websocket.app.state.session_factory() as session:
+        task = await session.get(Task, pairing.task_id)
+        if (
+            task is None
+            or task.owner_id != pairing.owner_id
+            or task.deleted_at is not None
+            or task.status == "completed"
+        ):
+            await websocket.close(code=4404, reason="pairing expired")
+            return
     runtime = await websocket.app.state.runtime_registry.get(pairing.task_id)
     await websocket.accept()
     websocket.app.state.mobile_hub.attach(pairing, websocket)
@@ -130,9 +140,9 @@ async def mobile_answers(websocket: WebSocket, pairing_token: str) -> None:
             "expires_at": pairing.expires_at,
         }
     )
-    await _send_answer_history(websocket, pairing.task_id)
     try:
         async with runtime.event_hub.subscribe() as queue:
+            await _send_answer_snapshot(websocket, pairing.task_id, runtime)
             while True:
                 event = await queue.get()
                 if event.type in {
@@ -353,7 +363,7 @@ async def _handle_agent_screenshot(
     await reply("accepted", "Screenshot captured. Analysis has started.")
 
 
-async def _send_answer_history(websocket: WebSocket, task_id: str) -> None:
+async def _send_answer_snapshot(websocket: WebSocket, task_id: str, runtime) -> None:
     async with websocket.app.state.session_factory() as session:
         rows = (
             await session.scalars(
@@ -365,20 +375,63 @@ async def _send_answer_history(websocket: WebSocket, task_id: str) -> None:
                     )
                 )
                 .order_by(TaskEvent.created_at.asc(), TaskEvent.id.asc())
-                .limit(500)
             )
         ).all()
+    cards: dict[str, dict[str, object]] = {}
     for row in rows:
-        await websocket.send_json(
-            RealtimeEvent(
-                type=row.event_type,
-                event_id=row.event_id,
-                session_id=task_id,
-                conversation_revision=row.conversation_revision,
-                created_at=row.created_at.timestamp(),
-                payload=row.payload,
-            ).model_dump(mode="json")
+        focus_id = str(row.payload.get("focus_id") or "")
+        if not focus_id:
+            continue
+        card = cards.get(focus_id)
+        if card is None:
+            card = {
+                "id": focus_id,
+                "question": str(row.payload.get("question") or ""),
+                "answer": "",
+                "code": "",
+                "source": str(row.payload.get("source") or "VOICE"),
+                "cancelled": False,
+                "created_at": row.created_at.timestamp(),
+            }
+            cards[focus_id] = card
+        if row.event_type == "focus.updated":
+            card["question"] = str(row.payload.get("question") or card["question"])
+            card["source"] = str(row.payload.get("source") or card["source"])
+        elif row.event_type == "answer.completed":
+            card["question"] = str(row.payload.get("question") or card["question"])
+            card["answer"] = str(row.payload.get("answer") or "")
+            card["code"] = str(row.payload.get("code") or "")
+            card["source"] = str(row.payload.get("source") or card["source"])
+            card["cancelled"] = False
+        elif row.event_type == "answer.cancelled":
+            card["cancelled"] = True
+
+    for focus in runtime.coordinator.store.focuses:
+        card = cards.get(focus.focus_id)
+        if card is None:
+            card = {
+                "id": focus.focus_id,
+                "created_at": focus.created_at,
+                "cancelled": False,
+            }
+            cards[focus.focus_id] = card
+        card.update(
+            {
+                "question": focus.question,
+                "answer": focus.recommended_answer,
+                "code": focus.code or "",
+                "source": focus.source.value,
+            }
         )
+
+    await websocket.send_json(
+        RealtimeEvent(
+            type="answer.snapshot",
+            session_id=task_id,
+            conversation_revision=runtime.coordinator.store.revision,
+            payload={"cards": list(cards.values()), "total_count": len(cards)},
+        ).model_dump(mode="json")
+    )
 
 
 def _websocket_token(websocket: WebSocket) -> str | None:

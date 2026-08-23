@@ -164,6 +164,8 @@ actor AgentControlClient {
                 CLIOutput.screenshotState(.noQuestion, durationMilliseconds: duration)
             case "timeout":
                 CLIOutput.screenshotState(.timeout, durationMilliseconds: duration)
+            case "abandoned":
+                break
             default:
                 CLIOutput.screenshotState(.failed, durationMilliseconds: duration)
             }

@@ -21,6 +21,7 @@ class ProjectedTurn:
 class FocusPromptBuildResult:
     markdown: str
     estimated_total_tokens: int
+    analysis_after_turn_id: int
     included_turn_ids: tuple[int, ...]
     included_focus_ids: tuple[str, ...]
     dialogue_start_turn_id: int | None
@@ -62,10 +63,12 @@ class FocusPromptBuilder:
         *,
         turns: tuple[ConversationTurn, ...],
         focuses: tuple[CommittedFocus, ...],
+        after_turn_id: int = 0,
     ) -> FocusPromptBuildResult:
+        pending_turns = tuple(turn for turn in turns if turn.turn_id > after_turn_id)
         focus_boundaries = {focus.source_end_turn_id for focus in focuses}
         projected_turns, noise_count = self._project_turns(
-            turns, focus_boundaries=focus_boundaries
+            pending_turns, focus_boundaries=focus_boundaries
         )
         selected_dialogue = self._take_recent_dialogue(
             projected_turns, self.dialogue_target_tokens
@@ -106,16 +109,17 @@ class FocusPromptBuilder:
         )
         compacted = (
             noise_count > 0
-            or len(included_turn_ids) < len(turns)
+            or len(included_turn_ids) < len(pending_turns)
             or len(selected_focuses) < len(eligible_focuses)
         )
         return FocusPromptBuildResult(
             markdown=markdown,
             estimated_total_tokens=self._total_tokens(markdown),
+            analysis_after_turn_id=after_turn_id,
             included_turn_ids=included_turn_ids,
             included_focus_ids=included_focus_ids,
             dialogue_start_turn_id=dialogue_start,
-            through_turn_id=turns[-1].turn_id if turns else 0,
+            through_turn_id=turns[-1].turn_id if turns else after_turn_id,
             removed_noise_turns=noise_count,
             compacted=compacted,
         )
@@ -278,15 +282,16 @@ class FocusPromptBuilder:
 
     @staticmethod
     def _render_history(focuses: list[CommittedFocus]) -> str:
-        lines = ["# 历史焦点"]
+        lines = ["# 历史分析结果"]
         if not focuses:
-            return "# 历史焦点\n无"
+            return "# 历史分析结果\n无"
         for index, focus in enumerate(focuses, start=1):
             answer = " ".join(focus.recommended_answer.split()).strip() or "无"
+            label = "当前 Focus" if index == len(focuses) else f"较早 Focus {index}"
             lines.extend(
                 [
                     "",
-                    f"## Focus {index}",
+                    f"## {label}",
                     f"Q: {' '.join(focus.question.split())}",
                     f"A: {answer}",
                 ]
@@ -297,9 +302,9 @@ class FocusPromptBuilder:
 
     @staticmethod
     def _render_dialogue(dialogue: list[ProjectedTurn]) -> str:
-        lines = ["# 最近对话"]
+        lines = ["# 上次分析后新增的对话"]
         if not dialogue:
-            return "# 最近对话\n无"
+            return "# 上次分析后新增的对话\n无"
         latest_interviewer_index = next(
             (
                 index

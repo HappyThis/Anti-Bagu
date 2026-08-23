@@ -55,7 +55,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     agent_hub = AgentHub()
     agent_authorizations = AgentAuthorizationHub()
-    mobile_hub = MobileHub()
+    mobile_hub = MobileHub(
+        active_settings.storage_dir.parent / "mobile-pairing.key"
+    )
     model_credential_service = ModelCredentialService(
         session_factory,
         CredentialCipher(active_settings.credential_key_path),

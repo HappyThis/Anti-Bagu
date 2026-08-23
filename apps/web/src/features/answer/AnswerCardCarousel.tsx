@@ -61,7 +61,7 @@ export function AnswerCardCarousel({ cards, onClear }: { cards: AnswerCard[]; on
       <div className="answer-carousel-viewport" ref={viewportRef} onScroll={updateIndexFromScroll}>
         {cards.length ? cards.map((card) => <DesktopAnswerCard card={card} key={card.id} />) : <div className="answer-slide answer-slide--empty"><span>当前问题</span><h2>等待面试官提出问题</h2><p>识别到完整问题后，建议回答会显示在这里。</p></div>}
       </div>
-      {cards.length > 1 ? <div className="answer-carousel-dots" aria-hidden="true">{cards.map((card, cardIndex) => <i className={cardIndex === index ? 'active' : ''} key={card.id} />)}</div> : null}
+      {cards.length > 1 && cards.length <= 30 ? <div className="answer-carousel-dots" aria-hidden="true">{cards.map((card, cardIndex) => <i className={cardIndex === index ? 'active' : ''} key={card.id} />)}</div> : null}
     </section>
   )
 }

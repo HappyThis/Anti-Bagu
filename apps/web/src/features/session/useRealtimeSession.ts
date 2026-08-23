@@ -154,6 +154,17 @@ function applyEvent(state: RealtimeState, event: RealtimeEvent): RealtimeState {
   const payload = event.payload
   const answerCards = applyAnswerEvent(state.answerCards, event)
   const screenshot = applyScreenshotEvent(state.screenshot, event)
+  if (event.type === 'answer.snapshot') {
+    const latest = answerCards.at(-1)
+    return {
+      ...state,
+      answerCards,
+      focus: latest?.question ?? '',
+      answer: latest?.answer ?? '',
+      generating: false,
+      error: '',
+    }
+  }
   if (event.type === 'transcript.partial' || event.type === 'transcript.final') {
     const channel = payload.channel as Channel
     const text = String(payload.text ?? '')

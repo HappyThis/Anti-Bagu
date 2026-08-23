@@ -35,6 +35,10 @@ class ConversationStore:
         return self._focuses[-1].recommended_answer if self._focuses else ""
 
     @property
+    def current_committed_focus(self) -> CommittedFocus | None:
+        return self._focuses[-1] if self._focuses else None
+
+    @property
     def latest_turn_id(self) -> int:
         return self._turns[-1].turn_id if self._turns else 0
 
@@ -75,6 +79,30 @@ class ConversationStore:
         )
         self._focuses.append(focus)
         return focus
+
+    def update_current_focus(
+        self,
+        *,
+        recommended_answer: str,
+        source_end_turn_id: int,
+        code: str | None = None,
+        source: FocusSource = FocusSource.VOICE,
+        screenshot_id: str = "",
+    ) -> CommittedFocus:
+        current = self.current_committed_focus
+        if current is None:
+            raise RuntimeError("cannot update a missing Focus")
+        updated = current.model_copy(
+            update={
+                "recommended_answer": recommended_answer.strip(),
+                "code": code.strip() if code else current.code,
+                "source": source,
+                "screenshot_id": screenshot_id or current.screenshot_id,
+                "source_end_turn_id": source_end_turn_id,
+            }
+        )
+        self._focuses[-1] = updated
+        return updated
 
     def recent_conversation_payload(self, max_turns: int = 20) -> list[dict[str, str]]:
         return [

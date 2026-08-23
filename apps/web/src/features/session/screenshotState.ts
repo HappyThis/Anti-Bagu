@@ -26,6 +26,7 @@ export function applyScreenshotEvent(current: ScreenshotState, event: RealtimeEv
     }
   }
   if (event.type === 'screenshot.focus.released') {
+    if (event.payload.outcome === 'abandoned') return EMPTY_SCREENSHOT_STATE
     return {
       status: normalizeStatus(String(event.payload.outcome ?? 'error')),
       screenshotId: String(event.payload.screenshot_id ?? current.screenshotId),

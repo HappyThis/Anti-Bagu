@@ -1,5 +1,5 @@
 import { Bell, CheckCircle, WarningCircle, Waveform } from '@phosphor-icons/react'
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { applyAnswerEvent, type AnswerCard } from '../../features/answer/answerCards'
@@ -11,44 +11,80 @@ import type { RealtimeEvent } from '../../shared/protocol'
 export function MobileCompanionPage() {
   const { pairingToken = '' } = useParams()
   const feedRef = useRef<HTMLDivElement>(null)
-  const previousCardCount = useRef(0)
-  const previousFeedHeight = useRef(0)
   const browsingHistory = useRef(false)
+  const anchorCardId = useRef('')
+  const previousNewestCardId = useRef('')
   const [connection, setConnection] = useState<'connecting' | 'connected' | 'expired'>('connecting')
   const [cards, setCards] = useState<AnswerCard[]>([])
   const [screenshot, setScreenshot] = useState(EMPTY_SCREENSHOT_STATE)
   const [hasNewAnswer, setHasNewAnswer] = useState(false)
 
   useEffect(() => {
-    const socket = new WebSocket(websocketUrl(`/ws/mobile/${pairingToken}`))
-    socket.addEventListener('open', () => setConnection('connected'))
-    socket.addEventListener('close', (event) => {
-      setConnection(event.code === 4404 ? 'expired' : 'connecting')
-    })
-    socket.addEventListener('message', (message) => {
-      const event = JSON.parse(message.data) as RealtimeEvent
-      setCards((current) => applyAnswerEvent(current, event))
-      setScreenshot((current) => applyScreenshotEvent(current, event))
-    })
-    return () => socket.close()
+    let disposed = false
+    let reconnectTimer: number | undefined
+    let socket: WebSocket | undefined
+    const connect = () => {
+      if (disposed) return
+      setConnection('connecting')
+      socket = new WebSocket(websocketUrl(`/ws/mobile/${pairingToken}`))
+      socket.addEventListener('open', () => {
+        if (!disposed) setConnection('connected')
+      })
+      socket.addEventListener('close', (event) => {
+        if (disposed) return
+        if (event.code === 4404) {
+          setConnection('expired')
+          return
+        }
+        setConnection('connecting')
+        reconnectTimer = window.setTimeout(connect, 1_500)
+      })
+      socket.addEventListener('message', (message) => {
+        if (disposed) return
+        try {
+          const event = JSON.parse(message.data) as RealtimeEvent
+          setCards((current) => applyAnswerEvent(current, event))
+          setScreenshot((current) => applyScreenshotEvent(current, event))
+        } catch {
+          // The server records malformed protocol messages.
+        }
+      })
+    }
+    connect()
+    return () => {
+      disposed = true
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer)
+      socket?.close()
+    }
   }, [pairingToken])
 
   useLayoutEffect(() => {
     const feed = feedRef.current
     if (!feed) return
-    const previousCount = previousCardCount.current
-    const heightDelta = feed.scrollHeight - previousFeedHeight.current
-    const hasNewCard = cards.length > previousCount
-    if (browsingHistory.current && previousFeedHeight.current > 0 && heightDelta > 0) {
-      feed.scrollTop += heightDelta
-    } else if (!browsingHistory.current && hasNewCard) {
-      feed.scrollTo({ top: 0, behavior: previousCount ? 'smooth' : 'auto' })
+    const newestCardId = cards.at(-1)?.id ?? ''
+    const previousNewest = previousNewestCardId.current
+    if (!newestCardId) {
+      previousNewestCardId.current = ''
+      anchorCardId.current = ''
+      return
     }
-    if (browsingHistory.current && hasNewCard) {
-      setHasNewAnswer(true)
+    if (!previousNewest) {
+      feed.scrollTo({ top: 0, behavior: 'auto' })
+    } else if (newestCardId !== previousNewest) {
+      if (browsingHistory.current && anchorCardId.current) {
+        const anchor = Array.from(feed.children).find(
+          (element) => (element as HTMLElement).dataset.cardId === anchorCardId.current,
+        ) as HTMLElement | undefined
+        if (anchor) {
+          feed.scrollTop +=
+            anchor.getBoundingClientRect().top - feed.getBoundingClientRect().top
+        }
+        setHasNewAnswer(true)
+      } else {
+        feed.scrollTo({ top: 0, behavior: 'smooth' })
+      }
     }
-    previousCardCount.current = cards.length
-    previousFeedHeight.current = feed.scrollHeight
+    previousNewestCardId.current = newestCardId
   }, [cards])
 
   useEffect(() => {
@@ -60,6 +96,28 @@ export function MobileCompanionPage() {
     return () => window.clearTimeout(timer)
   }, [screenshot.screenshotId, screenshot.status])
 
+  const newestFirst = useMemo(() => [...cards].reverse(), [cards])
+
+  function showNewestAnswer() {
+    browsingHistory.current = false
+    anchorCardId.current = newestFirst[0]?.id ?? ''
+    feedRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    setHasNewAnswer(false)
+  }
+
+  function handleFeedScroll() {
+    const feed = feedRef.current
+    if (!feed?.clientHeight) return
+    const index = Math.min(
+      newestFirst.length - 1,
+      Math.max(0, Math.round(feed.scrollTop / feed.clientHeight)),
+    )
+    const browsing = index > 0
+    browsingHistory.current = browsing
+    anchorCardId.current = newestFirst[index]?.id ?? ''
+    if (!browsing) setHasNewAnswer(false)
+  }
+
   if (connection === 'expired') {
     return (
       <main className="mobile-companion-page mobile-companion-page--centered">
@@ -70,15 +128,14 @@ export function MobileCompanionPage() {
     )
   }
 
-  const newestFirst = [...cards].reverse()
   return (
     <main className="mobile-companion-page mobile-companion-page--answers">
       <header>
         <span className="mobile-brand"><img src="/brand/anti-bagu-logo.png" alt="" />Anti-Bagu</span>
         {screenshot.status !== 'idle' ? <ScreenshotStatusBadge compact state={screenshot} /> : <span className={`mobile-live-state mobile-live-state--${connection}`}><i />{connection === 'connected' ? '已连接' : '正在连接'}</span>}
       </header>
-      {hasNewAnswer ? <button className="mobile-new-answer" type="button" onClick={() => { browsingHistory.current = false; feedRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); setHasNewAnswer(false) }}><Bell size={15} weight="fill" />有新回答</button> : null}
-      <div className="mobile-answer-feed" ref={feedRef} onScroll={() => { const browsing = (feedRef.current?.scrollTop ?? 0) > 40; browsingHistory.current = browsing; if (!browsing) setHasNewAnswer(false) }}>
+      {hasNewAnswer ? <button className="mobile-new-answer" type="button" onClick={showNewestAnswer}><Bell size={15} weight="fill" />有新回答</button> : null}
+      <div className="mobile-answer-feed" ref={feedRef} onScroll={handleFeedScroll}>
         {newestFirst.length ? newestFirst.map((card, index) => <MobileAnswerSlide card={card} position={cards.length - index} total={cards.length} key={card.id} />) : (
           <article className="mobile-answer-slide mobile-answer-slide--empty">
             <section className="mobile-qa-card"><header><span className="mobile-answer-index">等待中</span></header><div className="mobile-question-block"><span><Waveform size={14} />当前问题</span><h1>等待面试官提出问题</h1></div><div className="mobile-response-block"><span>建议回答</span><AutoFitAnswer text="识别到完整问题后，建议回答会显示在这里。" generating={false} /></div></section>
@@ -91,7 +148,7 @@ export function MobileCompanionPage() {
 
 const MobileAnswerSlide = memo(function MobileAnswerSlide({ card, position, total }: { card: AnswerCard; position: number; total: number }) {
   return (
-    <article className="mobile-answer-slide">
+    <article className="mobile-answer-slide" data-card-id={card.id}>
       <section className="mobile-qa-card">
         <header><span className="mobile-answer-index">{position} / {total}</span>{card.generating ? <em>生成中</em> : card.cancelled ? <em>已切换</em> : <CheckCircle size={17} weight="fill" />}</header>
         <div className="mobile-question-block">

@@ -2,9 +2,13 @@ from anti_bagu.llm.prompts import INTERVIEW_SYSTEM_PROMPT
 
 
 def test_single_prompt_prioritizes_latest_interviewer_question() -> None:
-    assert "始终优先处理最新的 I 发言" in INTERVIEW_SYSTEM_PROMPT
-    assert "只回答新问题" in INTERVIEW_SYSTEM_PROMPT
-    assert "历史 Q/A 只用于理解上下文" in INTERVIEW_SYSTEM_PROMPT
+    assert "始终优先处理新增对话中最新的 I 发言" in INTERVIEW_SYSTEM_PROMPT
+    assert "只根据“新增对话”判断" in INTERVIEW_SYSTEM_PROMPT
+    assert "历史分析结果只能帮助理解，不能单独触发回答" in INTERVIEW_SYSTEM_PROMPT
+    assert "question 必须原样复制当前 Q" in INTERVIEW_SYSTEM_PROMPT
+    assert "保证结果稳定" in INTERVIEW_SYSTEM_PROMPT
+    assert "相关话题不等于同一问题" in INTERVIEW_SYSTEM_PROMPT
+    assert "从意向锁转到死锁" in INTERVIEW_SYSTEM_PROMPT
 
 
 def test_single_prompt_handles_text_and_screenshot_coding() -> None:

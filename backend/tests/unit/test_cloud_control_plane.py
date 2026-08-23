@@ -9,7 +9,7 @@ from sqlalchemy import select
 from anti_bagu.api.app import create_app
 from anti_bagu.config import Settings
 from anti_bagu.credentials.service import ModelCredentials
-from anti_bagu.persistence.models import Task, User, UserModelCredentials
+from anti_bagu.persistence.models import Task, TaskEvent, User, UserModelCredentials
 from anti_bagu.tasks.model_verifier import VerificationResult
 
 
@@ -54,6 +54,41 @@ async def mark_task_running(app, task_id: str) -> None:
         task = await session.get(Task, task_id)
         assert task is not None
         task.status = "running"
+        await session.commit()
+
+
+async def seed_answer_cards(app, task_id: str, count: int) -> None:
+    async with app.state.session_factory() as session:
+        for index in range(1, count + 1):
+            focus_id = f"focus-{index}"
+            session.add(
+                TaskEvent(
+                    task_id=task_id,
+                    event_id=f"focus-event-{index}",
+                    event_type="focus.updated",
+                    conversation_revision=index,
+                    payload={
+                        "focus_id": focus_id,
+                        "question": f"问题 {index}",
+                        "source": "VOICE",
+                    },
+                )
+            )
+            session.add(
+                TaskEvent(
+                    task_id=task_id,
+                    event_id=f"answer-event-{index}",
+                    event_type="answer.completed",
+                    conversation_revision=index,
+                    payload={
+                        "focus_id": focus_id,
+                        "question": f"问题 {index}",
+                        "answer": f"回答 {index}",
+                        "code": "",
+                        "source": "VOICE",
+                    },
+                )
+            )
         await session.commit()
 
 
@@ -132,6 +167,64 @@ def test_task_ui_websocket_uses_http_only_login_cookie(tmp_path) -> None:
 
         assert status_event["type"] == "session.status"
         assert status_event["payload"]["status"] == "draft"
+
+
+def test_task_ui_snapshot_restores_more_than_fifty_answer_cards(tmp_path) -> None:
+    app = create_app(cloud_settings(tmp_path))
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-horse-battery"},
+        ).json()
+        task = client.post(
+            "/api/v1/tasks",
+            headers=bearer(login["token"]),
+            json={"name": "Snapshot", "mobile_required": False},
+        ).json()
+        assert client.portal is not None
+        client.portal.call(seed_answer_cards, app, task["id"], 106)
+
+        with client.websocket_connect(f"/ws/tasks/{task['id']}/ui") as socket:
+            assert socket.receive_json()["type"] == "session.status"
+            snapshot = socket.receive_json()
+
+        assert snapshot["type"] == "answer.snapshot"
+        assert snapshot["payload"]["total_count"] == 106
+        assert len(snapshot["payload"]["cards"]) == 106
+        assert snapshot["payload"]["cards"][0]["question"] == "问题 1"
+        assert snapshot["payload"]["cards"][-1]["question"] == "问题 106"
+
+
+def test_mobile_pairing_survives_server_restart_and_restores_snapshot(tmp_path) -> None:
+    settings = cloud_settings(tmp_path)
+    first_app = create_app(settings)
+    with TestClient(first_app) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-horse-battery"},
+        ).json()
+        task = client.post(
+            "/api/v1/tasks",
+            headers=bearer(login["token"]),
+            json={"name": "Mobile restart", "mobile_required": False},
+        ).json()
+        assert client.portal is not None
+        client.portal.call(seed_answer_cards, first_app, task["id"], 51)
+        pairing = client.post(
+            f"/api/v1/tasks/{task['id']}/pairing",
+            headers=bearer(login["token"]),
+        ).json()
+
+    second_app = create_app(settings)
+    with TestClient(second_app) as client:
+        with client.websocket_connect(f"/ws/mobile/{pairing['token']}") as socket:
+            paired = socket.receive_json()
+            snapshot = socket.receive_json()
+
+        assert paired["type"] == "mobile.paired"
+        assert snapshot["type"] == "answer.snapshot"
+        assert snapshot["payload"]["total_count"] == 51
+        assert snapshot["payload"]["cards"][-1]["question"] == "问题 51"
 
 
 def test_activation_registration_login_and_task_lifecycle(tmp_path) -> None:

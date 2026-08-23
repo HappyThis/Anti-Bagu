@@ -24,6 +24,11 @@ from anti_bagu.interview.events import (
     WaitResult,
 )
 from anti_bagu.interview.sink import MemoryEventSink
+from anti_bagu.llm.base import (
+    InterviewResponse,
+    ModelOutputFailure,
+    ModelOutputRetriesExhausted,
+)
 
 
 def transcript(
@@ -75,6 +80,46 @@ def answer_result(
         answer=answer,
         code=code,
     )
+
+
+def output_failures() -> tuple[ModelOutputFailure, ...]:
+    return (
+        ModelOutputFailure(
+            attempt=1,
+            raw_content="first invalid output",
+            finish_reason="stop",
+            error_type="JSONDecodeError",
+            error_message="Expecting value",
+        ),
+        ModelOutputFailure(
+            attempt=2,
+            raw_content="second invalid output",
+            finish_reason="stop",
+            error_type="JSONDecodeError",
+            error_message="Expecting value",
+        ),
+    )
+
+
+class AbandonedThenAnswerResponder:
+    def __init__(self, result: AnswerResult) -> None:
+        self.result = result
+        self.calls: list[dict[str, object]] = []
+
+    async def respond(self, **kwargs):
+        self.calls.append(kwargs)
+        if len(self.calls) == 1:
+            raise ModelOutputRetriesExhausted(output_failures())
+        return self.result
+
+
+class AlwaysAbandonedResponder:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def respond(self, **kwargs):
+        self.calls.append(kwargs)
+        raise ModelOutputRetriesExhausted(output_failures())
 
 
 @pytest.mark.asyncio
@@ -254,8 +299,231 @@ async def test_previous_focus_and_answer_are_in_next_prompt() -> None:
     second_prompt = responder.calls[1]["prompt"]
     assert "Q: Redis 为什么快？" in second_prompt
     assert "A: 因为内存和 I/O 多路复用。" in second_prompt
+    assert "# 上次分析后新增的对话" in second_prompt
+    assert "- I: Redis 为什么快？" not in second_prompt
     assert "- C: 我主要说了内存。" in second_prompt
     assert "- I（最新）: 那 I/O 模型呢？" in second_prompt
+
+
+@pytest.mark.asyncio
+async def test_wait_advances_analysis_boundary_without_changing_focus() -> None:
+    responder = SequencedFocusResponder(
+        (wait_result(), answer_result("Redis 为什么快？"))
+    )
+    subject = coordinator(responder)
+
+    await subject.handle_transcript(
+        transcript(Channel.INTERVIEWER, TranscriptPhase.FINAL, "嗯，先等一下。")
+    )
+    await subject.wait_idle()
+    await subject.handle_transcript(
+        transcript(
+            Channel.CANDIDATE,
+            TranscriptPhase.FINAL,
+            "好的。",
+            utterance_id="candidate-after-wait",
+        )
+    )
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "Redis 为什么快？",
+            utterance_id="interviewer-after-wait",
+        )
+    )
+    await subject.wait_idle()
+
+    assert len(responder.calls) == 2
+    assert "嗯，先等一下" not in responder.calls[1]["prompt"]
+    assert "- C: 好的。" in responder.calls[1]["prompt"]
+    assert "- I（最新）: Redis 为什么快？" in responder.calls[1]["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_identical_model_result_does_not_create_duplicate_focus() -> None:
+    result = answer_result("什么是 MySQL 的幻读？", "幻读是范围查询出现新行。")
+    responder = SequencedFocusResponder((result, result))
+    sink = MemoryEventSink()
+    subject = coordinator(responder, sink=sink)
+
+    await subject.handle_transcript(
+        transcript(Channel.INTERVIEWER, TranscriptPhase.FINAL, "什么是幻读？")
+    )
+    await subject.wait_idle()
+    focus_id = subject.store.focuses[0].focus_id
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "嗯，对。",
+            utterance_id="interviewer-confirmation",
+        )
+    )
+    await subject.wait_idle()
+
+    assert len(subject.store.focuses) == 1
+    assert subject.store.focuses[0].focus_id == focus_id
+    assert [event.type for event in sink.events].count("answer.completed") == 1
+    assert [event.type for event in sink.events].count("focus.unchanged") == 1
+
+
+@pytest.mark.asyncio
+async def test_same_question_revises_current_focus_and_preserves_code() -> None:
+    responder = SequencedFocusResponder(
+        (
+            answer_result(
+                "反转链表",
+                "使用三个指针。",
+                "def reverse(head):\n    return head",
+            ),
+            answer_result("反转链表。", "补充说明需要保存 next 指针。"),
+        )
+    )
+    sink = MemoryEventSink()
+    subject = coordinator(responder, sink=sink)
+
+    await subject.handle_transcript(
+        transcript(Channel.INTERVIEWER, TranscriptPhase.FINAL, "怎么反转链表？")
+    )
+    await subject.wait_idle()
+    focus_id = subject.store.focuses[0].focus_id
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "为什么要保存 next 指针？",
+            utterance_id="interviewer-follow-up",
+        )
+    )
+    await subject.wait_idle()
+
+    assert len(subject.store.focuses) == 1
+    current = subject.store.focuses[0]
+    assert current.focus_id == focus_id
+    assert current.recommended_answer == "补充说明需要保存 next 指针。"
+    assert current.code == "def reverse(head):\n    return head"
+    completed = [event for event in sink.events if event.type == "answer.completed"]
+    assert len(completed) == 2
+    assert {event.payload["focus_id"] for event in completed} == {focus_id}
+    updates = [event for event in sink.events if event.type == "focus.updated"]
+    assert updates[-1].payload["update_kind"] == "revised"
+
+
+@pytest.mark.asyncio
+async def test_new_question_creates_a_new_focus_card() -> None:
+    responder = SequencedFocusResponder(
+        (
+            answer_result("Redis 为什么快？"),
+            answer_result("HashMap 的底层结构是什么？"),
+        )
+    )
+    subject = coordinator(responder)
+
+    await subject.handle_transcript(
+        transcript(Channel.INTERVIEWER, TranscriptPhase.FINAL, "Redis 为什么快？")
+    )
+    await subject.wait_idle()
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "HashMap 的底层结构是什么？",
+            utterance_id="interviewer-new-topic",
+        )
+    )
+    await subject.wait_idle()
+
+    assert [focus.question for focus in subject.store.focuses] == [
+        "Redis 为什么快？",
+        "HashMap 的底层结构是什么？",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_abandoned_voice_focus_keeps_watermark_and_product_state_unchanged() -> None:
+    responder = AbandonedThenAnswerResponder(answer_result("HashMap 是什么？"))
+    sink = MemoryEventSink()
+    subject = coordinator(responder, sink=sink)
+
+    await subject.handle_transcript(
+        transcript(Channel.INTERVIEWER, TranscriptPhase.FINAL, "Redis 为什么快？")
+    )
+    await subject.wait_idle()
+
+    assert subject.store.focuses == ()
+    assert [event.type for event in sink.events].count("focus.abandoned") == 1
+    assert [event.type for event in sink.events].count("internal.llm.output_invalid") == 2
+    assert "focus.error" not in [event.type for event in sink.events]
+    assert "answer.completed" not in [event.type for event in sink.events]
+
+    await subject.handle_transcript(
+        transcript(
+            Channel.INTERVIEWER,
+            TranscriptPhase.FINAL,
+            "HashMap 是什么？",
+            utterance_id="interviewer-after-abandoned",
+        )
+    )
+    await subject.wait_idle()
+
+    assert len(responder.calls) == 2
+    assert "Redis 为什么快？" in responder.calls[1]["prompt"]
+    assert "HashMap 是什么？" in responder.calls[1]["prompt"]
+    assert subject.store.current_focus == "HashMap 是什么？"
+
+
+@pytest.mark.asyncio
+async def test_successful_retry_records_diagnostics_and_commits_normally() -> None:
+    response = InterviewResponse(
+        result=answer_result("Redis 为什么快？"),
+        output_failures=output_failures()[:1],
+    )
+    sink = MemoryEventSink()
+    subject = coordinator(FakeFocusResponder(response), sink=sink)
+
+    await subject.handle_transcript(
+        transcript(Channel.INTERVIEWER, TranscriptPhase.FINAL, "Redis 为什么快？")
+    )
+    await subject.wait_idle()
+
+    lifecycle = [event.type for event in sink.events]
+    assert lifecycle.count("internal.llm.output_invalid") == 1
+    assert lifecycle.count("focus.retry_succeeded") == 1
+    assert lifecycle.count("answer.completed") == 1
+    assert subject.store.current_focus == "Redis 为什么快？"
+
+
+@pytest.mark.asyncio
+async def test_abandoned_screenshot_leaves_no_focus_and_releases_exclusive_state() -> None:
+    screenshot = AlwaysAbandonedResponder()
+    sink = MemoryEventSink()
+    statuses: list[dict[str, object]] = []
+
+    async def record_status(payload: dict[str, object]) -> None:
+        statuses.append(payload)
+
+    subject = coordinator(
+        FakeFocusResponder(wait_result()), screenshot=screenshot, sink=sink
+    )
+
+    await subject.handle_screenshot(
+        screenshot_id="screen-abandoned",
+        image_data=b"image",
+        mime_type="image/jpeg",
+        storage_path="tasks/task/screenshots/screen-abandoned.jpg",
+        status_handler=record_status,
+    )
+    await subject.wait_idle()
+
+    assert subject.store.focuses == ()
+    assert not subject.screenshot_focus_active
+    assert statuses[-1]["status"] == "abandoned"
+    lifecycle = [event.type for event in sink.events]
+    assert lifecycle.count("focus.abandoned") == 1
+    assert lifecycle.count("internal.llm.output_invalid") == 2
+    assert "answer.completed" not in lifecycle
+    assert "error" not in lifecycle
 
 
 @pytest.mark.asyncio

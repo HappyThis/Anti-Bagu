@@ -57,7 +57,7 @@ def test_prompt_is_minimal_markdown_with_time_ordered_roles() -> None:
     )
 
     assert result.markdown == (
-        "# 历史焦点\n无\n\n# 最近对话\n"
+        "# 历史分析结果\n无\n\n# 上次分析后新增的对话\n"
         "- I: 在 MySQL 中。\n"
         "- C: 我会先查看日志。\n"
         "- I（最新）: 如何定位慢查询？"
@@ -158,6 +158,28 @@ def test_latest_focus_is_kept_to_preserve_unspoken_recommendation() -> None:
 
     assert result.included_focus_ids == ("focus-1",)
     assert "A: 因为内存。" in result.markdown
+
+
+def test_only_turns_after_last_analysis_are_rendered_as_new_dialogue() -> None:
+    builder = FocusPromptBuilder(system_prompt=SYSTEM_PROMPT)
+    result = builder.build(
+        focuses=(focus(1, "Redis 为什么快？", "因为内存。", 2),),
+        turns=(
+            turn(1, Channel.INTERVIEWER, "Redis 为什么快？"),
+            turn(2, Channel.CANDIDATE, "因为内存。"),
+            turn(3, Channel.CANDIDATE, "我还会补充 I/O 多路复用。"),
+            turn(4, Channel.INTERVIEWER, "那单线程为什么能处理高并发？"),
+        ),
+        after_turn_id=2,
+    )
+
+    assert result.analysis_after_turn_id == 2
+    assert result.included_turn_ids == (3, 4)
+    assert "Q: Redis 为什么快？" in result.markdown
+    assert "- I: Redis 为什么快？" not in result.markdown
+    assert "- C: 因为内存。" not in result.markdown
+    assert "- C: 我还会补充 I/O 多路复用。" in result.markdown
+    assert "- I（最新）: 那单线程为什么能处理高并发？" in result.markdown
 
 
 def test_latest_coding_focus_is_carried_into_next_prompt() -> None:
