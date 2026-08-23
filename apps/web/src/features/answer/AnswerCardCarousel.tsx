@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Bell, Code, Trash } from '@phosphor-icons/react'
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import type { AnswerCard } from './answerCards'
 
@@ -10,10 +10,11 @@ export function AnswerCardCarousel({ cards, onClear }: { cards: AnswerCard[]; on
   const [index, setIndex] = useState(Math.max(0, cards.length - 1))
   const [unseen, setUnseen] = useState(false)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!initialized.current && cards.length) {
       initialized.current = true
-      moveTo(cards.length - 1)
+      previousLength.current = cards.length
+      moveTo(cards.length - 1, 'auto')
     }
   }, [cards.length])
 
@@ -31,12 +32,12 @@ export function AnswerCardCarousel({ cards, onClear }: { cards: AnswerCard[]; on
     }
   }, [cards.length, index])
 
-  function moveTo(nextIndex: number) {
+  function moveTo(nextIndex: number, behavior: ScrollBehavior = 'smooth') {
     const bounded = Math.min(Math.max(0, nextIndex), Math.max(0, cards.length - 1))
     setIndex(bounded)
     if (bounded === cards.length - 1) setUnseen(false)
     const viewport = viewportRef.current
-    if (viewport) viewport.scrollTo({ left: bounded * viewport.clientWidth, behavior: 'smooth' })
+    if (viewport) viewport.scrollTo({ left: bounded * viewport.clientWidth, behavior })
   }
 
   function updateIndexFromScroll() {
