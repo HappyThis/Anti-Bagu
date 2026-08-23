@@ -32,4 +32,7 @@ type 为 answer 时，question 和 answer 必须非空。
 """.strip()
 
 
-SCREENSHOT_INPUT_NOTE = "本次请求包含当前屏幕截图，请优先分析截图内容。"
+SCREENSHOT_INPUT_NOTE = """
+本次请求包含当前屏幕截图。截图是本次请求首要且权威的信息源。
+请只回答截图中的题目，忽略截图之外的对话内容。
+""".strip()

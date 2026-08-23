@@ -51,6 +51,15 @@ export function MobileCompanionPage() {
     previousFeedHeight.current = feed.scrollHeight
   }, [cards])
 
+  useEffect(() => {
+    if (screenshot.status === 'idle' || screenshot.status === 'analyzing') return
+    const screenshotId = screenshot.screenshotId
+    const timer = window.setTimeout(() => {
+      setScreenshot((current) => current.screenshotId === screenshotId ? EMPTY_SCREENSHOT_STATE : current)
+    }, 4_000)
+    return () => window.clearTimeout(timer)
+  }, [screenshot.screenshotId, screenshot.status])
+
   if (connection === 'expired') {
     return (
       <main className="mobile-companion-page mobile-companion-page--centered">

@@ -26,12 +26,15 @@ class DeepSeekInterviewResponder:
         if has_image:
             encoded = base64.b64encode(image_data).decode("ascii")
             user_content = [
-                {"type": "text", "text": f"{prompt}\n\n{SCREENSHOT_INPUT_NOTE}"},
                 {
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:{mime_type or 'image/jpeg'};base64,{encoded}",
                     },
+                },
+                {
+                    "type": "text",
+                    "text": SCREENSHOT_INPUT_NOTE,
                 },
             ]
         else:

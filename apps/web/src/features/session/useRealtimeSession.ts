@@ -29,6 +29,7 @@ export interface RealtimeState {
 type Action =
   | { type: 'connection'; value: ConnectionStatus }
   | { type: 'event'; value: RealtimeEvent }
+  | { type: 'screenshot-clear'; screenshotId: string }
   | { type: 'clear' }
 
 const EMPTY_LATENCY: LatencySnapshot = {
@@ -226,11 +227,25 @@ function reducer(state: RealtimeState, action: Action): RealtimeState {
       latency: state.latency,
     }
   }
+  if (action.type === 'screenshot-clear') {
+    if (state.screenshot.screenshotId !== action.screenshotId) return state
+    return { ...state, screenshot: EMPTY_SCREENSHOT_STATE }
+  }
   return applyEvent(state, action.value)
 }
 
 export function useRealtimeSession(url: string) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState)
+
+  useEffect(() => {
+    if (!isFinalScreenshotStatus(state.screenshot.status)) return
+    const screenshotId = state.screenshot.screenshotId
+    const timer = window.setTimeout(
+      () => dispatch({ type: 'screenshot-clear', screenshotId }),
+      4_000,
+    )
+    return () => window.clearTimeout(timer)
+  }, [state.screenshot.screenshotId, state.screenshot.status])
 
   useEffect(() => {
     let disposed = false
@@ -276,4 +291,8 @@ export function useRealtimeSession(url: string) {
     state,
     clear: () => dispatch({ type: 'clear' }),
   }
+}
+
+function isFinalScreenshotStatus(status: ScreenshotState['status']): boolean {
+  return status !== 'idle' && status !== 'analyzing'
 }

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Bell, Trash } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, Bell, Code, Trash } from '@phosphor-icons/react'
 import { memo, useEffect, useRef, useState } from 'react'
 
 import type { AnswerCard } from './answerCards'
@@ -50,7 +50,7 @@ export function AnswerCardCarousel({ cards, onClear }: { cards: AnswerCard[]; on
   return (
     <section className="answer-carousel" aria-label="问题与建议回答">
       <header>
-        <div><span>问题与回答</span><strong>{cards.length ? `${index + 1} / ${cards.length}` : '等待提问'}</strong></div>
+        <div><span>问题与回答</span><strong>{cards.length ? `${index + 1} / ${cards.length}` : '等待提问'}</strong>{cards.length > 1 ? <small>左右滑动切换问题</small> : null}</div>
         <div className="answer-carousel-actions">
           {unseen ? <button className="new-answer-button" type="button" onClick={() => moveTo(cards.length - 1)}><Bell size={15} weight="fill" />有新回答</button> : null}
           <button type="button" aria-label="上一个问题" disabled={!cards.length || index === 0} onClick={() => moveTo(index - 1)}><ArrowLeft size={17} /></button>
@@ -71,7 +71,7 @@ const DesktopAnswerCard = memo(function DesktopAnswerCard({ card }: { card: Answ
   const hasCode = Boolean(card.code)
   return (
     <article className="answer-slide">
-      <div className="answer-slide-question"><span>当前问题</span><h2>{card.question}</h2></div>
+      <div className="answer-slide-question"><div className="answer-question-meta"><span>当前问题</span>{hasCode ? <em><Code size={14} />包含 Python 代码</em> : null}</div><h2>{card.question}</h2></div>
       <div className="answer-slide-response">
         <header>
           <div className="answer-content-heading">
@@ -79,7 +79,7 @@ const DesktopAnswerCard = memo(function DesktopAnswerCard({ card }: { card: Answ
             {card.source === 'SCREENSHOT' ? <em>截图识别</em> : null}
             {card.generating ? <em>生成中</em> : card.cancelled ? <em>已切换问题</em> : card.answer ? <em>已准备</em> : null}
           </div>
-          {hasCode ? <div className="answer-pane-tabs" role="tablist" aria-label="解题内容"><button className={pane === 'answer' ? 'active' : ''} type="button" role="tab" aria-selected={pane === 'answer'} onClick={() => setPane('answer')}>解题思路</button><button className={pane === 'code' ? 'active' : ''} type="button" role="tab" aria-selected={pane === 'code'} onClick={() => setPane('code')}>Python 代码</button></div> : null}
+          {hasCode ? <div className="answer-pane-tabs" role="tablist" aria-label="解题内容"><button className={pane === 'answer' ? 'active' : ''} type="button" role="tab" aria-selected={pane === 'answer'} onClick={() => setPane('answer')}>解题思路</button><button className={pane === 'code' ? 'active' : ''} type="button" role="tab" aria-selected={pane === 'code'} onClick={() => setPane('code')}><Code size={15} />Python 代码</button></div> : null}
         </header>
         {card.error ? <p className="error-copy">{card.error}</p> : null}
         {pane === 'code' && hasCode ? <div className="answer-code-pane"><pre><code>{card.code}</code></pre></div> : <p className={card.answer ? '' : 'answer-placeholder'}>{card.answer || (card.generating ? '正在生成建议回答…' : '建议回答准备中…')}{card.generating ? <i className="cursor" /> : null}</p>}
