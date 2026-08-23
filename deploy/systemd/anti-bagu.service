@@ -9,7 +9,7 @@ User=antibagu
 Group=antibagu
 WorkingDirectory=/opt/anti-bagu
 EnvironmentFile=/etc/anti-bagu/anti-bagu.env
-ExecStart=/opt/anti-bagu/.venv/bin/uvicorn anti_bagu.main:app --host 127.0.0.1 --port 8765 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+ExecStart=/opt/anti-bagu/.venv/bin/uvicorn anti_bagu.main:app --host 127.0.0.1 --port 8765 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1 --timeout-graceful-shutdown 10
 Restart=always
 RestartSec=3
 TimeoutStopSec=30

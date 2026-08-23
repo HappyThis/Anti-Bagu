@@ -369,7 +369,10 @@ def _websocket_token(websocket: WebSocket) -> str | None:
         scheme, _, token = value.partition(" ")
         if scheme.lower() == "bearer" and token:
             return token.strip()
-    return websocket.query_params.get("token")
+    return (
+        websocket.cookies.get("anti_bagu_session")
+        or websocket.query_params.get("token")
+    )
 
 
 async def _authorized_task(websocket: WebSocket, task_id: str, user: User | None):

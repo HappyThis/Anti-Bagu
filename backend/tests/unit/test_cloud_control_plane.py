@@ -114,6 +114,26 @@ def test_agent_screenshot_is_accepted_and_saved_for_running_task(tmp_path) -> No
         assert screenshots[0].read_bytes() == b"fake-jpeg"
 
 
+def test_task_ui_websocket_uses_http_only_login_cookie(tmp_path) -> None:
+    app = create_app(cloud_settings(tmp_path))
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-horse-battery"},
+        )
+        assert login.status_code == 200
+        task = client.post(
+            "/api/v1/tasks",
+            json={"name": "Cookie WebSocket", "mobile_required": False},
+        ).json()
+
+        with client.websocket_connect(f"/ws/tasks/{task['id']}/ui") as socket:
+            status_event = socket.receive_json()
+
+        assert status_event["type"] == "session.status"
+        assert status_event["payload"]["status"] == "draft"
+
+
 def test_activation_registration_login_and_task_lifecycle(tmp_path) -> None:
     app = create_app(cloud_settings(tmp_path))
     with TestClient(app) as client:

@@ -18,7 +18,7 @@ export function LiveTaskPage() {
   const { session } = useAuth()
   const task = getTask(taskId)
   const realtimeUrl = taskId && session
-    ? websocketUrl(`/ws/tasks/${taskId}/ui`, session.token)
+    ? websocketUrl(`/ws/tasks/${taskId}/ui`)
     : ''
   const { state, clear } = useRealtimeSession(realtimeUrl)
   const [paused, setPaused] = useState(false)

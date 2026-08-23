@@ -23,6 +23,8 @@ ssh "$TARGET" "
   sudo -u antibagu ${REMOTE_RELEASE}/.venv/bin/pip install -i https://mirrors.aliyun.com/pypi/simple/ -e ${REMOTE_RELEASE}/backend
   cd ${REMOTE_RELEASE}
   sudo -u antibagu bash -lc 'set -a; source /etc/anti-bagu/anti-bagu.env; set +a; .venv/bin/alembic -c backend/alembic.ini upgrade head'
+  install -m 0644 ${REMOTE_RELEASE}/deploy/systemd/anti-bagu.service /etc/systemd/system/anti-bagu.service
+  systemctl daemon-reload
   systemctl restart anti-bagu
   nginx -t
   systemctl reload nginx
