@@ -182,6 +182,12 @@ class FocusPromptBuilder:
         for focus in reversed(focuses):
             candidate = [focus, *selected]
             if self.estimator.estimate(self._render_history(candidate)) > token_budget:
+                # The latest committed Focus is the semantic anchor for follow-up
+                # questions. Keep it even when its code makes it exceed the soft
+                # history allocation; the fixed total-budget pass will evict older
+                # dialogue before considering this Focus.
+                if not selected:
+                    selected = [focus]
                 break
             selected = candidate
         return selected
@@ -245,10 +251,15 @@ class FocusPromptBuilder:
         focuses: list[CommittedFocus],
     ) -> tuple[list[ProjectedTurn], list[CommittedFocus]]:
         while self._total_tokens(self._render(focuses, dialogue)) > self.target_tokens:
-            if focuses:
+            if len(focuses) > 1:
                 focuses = focuses[1:]
             elif len(dialogue) > 1:
                 dialogue = dialogue[1:]
+            elif focuses:
+                # Only an exceptionally large single Focus can reach this branch.
+                # The hard 8K limit still wins when no further history or dialogue
+                # can be removed.
+                focuses = []
             else:
                 break
         return dialogue, focuses
@@ -280,6 +291,8 @@ class FocusPromptBuilder:
                     f"A: {answer}",
                 ]
             )
+            if index == len(focuses) and focus.code:
+                lines.extend(["Code:", "```python", focus.code.strip(), "```"])
         return "\n".join(lines)
 
     @staticmethod

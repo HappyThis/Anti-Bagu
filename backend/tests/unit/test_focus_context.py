@@ -31,11 +31,14 @@ def focus(
     question: str,
     answer: str,
     source_end_turn_id: int,
+    *,
+    code: str | None = None,
 ) -> CommittedFocus:
     return CommittedFocus(
         focus_id=f"focus-{index}",
         question=question,
         recommended_answer=answer,
+        code=code,
         source_start_turn_id=max(1, source_end_turn_id - 1),
         source_end_turn_id=source_end_turn_id,
         created_at=float(index),
@@ -155,6 +158,84 @@ def test_latest_focus_is_kept_to_preserve_unspoken_recommendation() -> None:
 
     assert result.included_focus_ids == ("focus-1",)
     assert "A: 因为内存。" in result.markdown
+
+
+def test_latest_coding_focus_is_carried_into_next_prompt() -> None:
+    builder = FocusPromptBuilder(system_prompt=SYSTEM_PROMPT)
+    latest_code = (
+        "def two_sum(nums, target):\n"
+        "    # 记录已访问数字的位置\n"
+        "    seen = {}\n"
+        "    for index, value in enumerate(nums):\n"
+        "        if target - value in seen:\n"
+        "            return [seen[target - value], index]\n"
+        "        seen[value] = index\n"
+        "    return []"
+    )
+    result = builder.build(
+        focuses=(
+            focus(
+                1,
+                "两数之和怎么实现？",
+                "使用哈希表一次遍历。",
+                2,
+                code=latest_code,
+            ),
+        ),
+        turns=(
+            turn(3, Channel.CANDIDATE, "我会用哈希表。"),
+            turn(4, Channel.INTERVIEWER, "为什么这样是 O(n)？"),
+        ),
+    )
+
+    assert result.included_focus_ids == ("focus-1",)
+    assert "Code:\n```python" in result.markdown
+    assert latest_code in result.markdown
+    assert result.markdown.endswith("- I（最新）: 为什么这样是 O(n)？")
+
+
+def test_only_latest_focus_code_is_repeated() -> None:
+    builder = FocusPromptBuilder(system_prompt=SYSTEM_PROMPT)
+    result = builder.build(
+        focuses=(
+            focus(1, "旧题", "旧答案", 2, code="def old_solution():\n    pass"),
+            focus(2, "新题", "新答案", 4, code="def new_solution():\n    pass"),
+        ),
+        turns=(turn(5, Channel.INTERVIEWER, "这个边界条件呢？"),),
+    )
+
+    assert "def old_solution" not in result.markdown
+    assert "def new_solution" in result.markdown
+
+
+def test_latest_code_uses_total_budget_before_old_dialogue() -> None:
+    builder = FocusPromptBuilder(
+        system_prompt=SYSTEM_PROMPT,
+        target_tokens=240,
+        dialogue_target_tokens=160,
+        history_target_tokens=40,
+        estimator=TokenEstimator(characters_per_token=1),
+    )
+    latest_code = "def solve():\n" + "    value += 1\n" * 5
+    result = builder.build(
+        focuses=(
+            focus(1, "如何实现？", "遍历并累计。", 2, code=latest_code),
+        ),
+        turns=tuple(
+            turn(
+                index,
+                Channel.INTERVIEWER if index % 2 else Channel.CANDIDATE,
+                f"较早的对话内容第{index}段。",
+            )
+            for index in range(3, 15)
+        ),
+    )
+
+    assert result.estimated_total_tokens <= 240
+    assert result.included_focus_ids == ("focus-1",)
+    assert latest_code in result.markdown
+    assert result.included_turn_ids[-1] == 14
+    assert 3 not in result.included_turn_ids
 
 
 def test_prompt_never_exceeds_fixed_total_budget() -> None:
