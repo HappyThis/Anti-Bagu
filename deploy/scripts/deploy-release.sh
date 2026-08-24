@@ -34,7 +34,7 @@ ssh "$TARGET" "
 
   chown -R antibagu:antibagu \"\${RELEASE}\"
   sudo -u antibagu python3 -m venv \"\${RELEASE}/.venv\"
-  sudo -u antibagu \"\${RELEASE}/.venv/bin/pip\" install \
+  sudo -u antibagu env PIP_NO_CACHE_DIR=1 \"\${RELEASE}/.venv/bin/pip\" install \
     -i https://mirrors.aliyun.com/pypi/simple/ -e \"\${RELEASE}/backend\"
   cd \"\${RELEASE}\"
   sudo -u antibagu bash -lc \
