@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from enum import StrEnum
@@ -78,10 +79,26 @@ class AnswerResult(BaseModel):
         self.question = self.question.strip()
         self.answer = self.answer.strip()
         self.code = self.code.strip() if self.code and self.code.strip() else None
+        if self.code:
+            self.answer = re.sub(
+                r"```(?:python)?\s*[\s\S]*?```",
+                "",
+                self.answer,
+                flags=re.IGNORECASE,
+            ).strip()
+            self.answer = re.sub(r"\n{3,}", "\n\n", self.answer)
         if not self.question:
             raise ValueError("answer requires a question")
         if not self.answer:
             raise ValueError("answer requires answer text")
+        if len(self.question) > 60:
+            raise ValueError(
+                "question must be a short display title of at most 60 characters"
+            )
+        if len(self.answer) > 600:
+            raise ValueError(
+                "answer must be concise and at most 600 characters"
+            )
         return self
 
 

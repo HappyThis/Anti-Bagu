@@ -3,6 +3,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import { useParams } from 'react-router-dom'
 
 import { applyAnswerEvent, type AnswerCard } from '../../features/answer/answerCards'
+import { conciseQuestionTitle } from '../../features/answer/presentation'
 import { ScreenshotStatusBadge } from '../../features/session/ScreenshotStatusBadge'
 import { applyScreenshotEvent, EMPTY_SCREENSHOT_STATE } from '../../features/session/screenshotState'
 import { websocketUrl } from '../../shared/api'
@@ -153,7 +154,7 @@ const MobileAnswerSlide = memo(function MobileAnswerSlide({ card, position, tota
         <header><span className="mobile-answer-index">{position} / {total}</span>{card.generating ? <em>生成中</em> : card.cancelled ? <em>已切换</em> : <CheckCircle size={17} weight="fill" />}</header>
         <div className="mobile-question-block">
           <span><Waveform size={14} />问题</span>
-          <h1>{card.question}</h1>
+          <h1 title={card.question}>{conciseQuestionTitle(card.question)}</h1>
         </div>
         <MobileCardContent card={card} />
       </section>
@@ -195,9 +196,9 @@ function AutoFitAnswer({ text, generating }: { text: string; generating: boolean
     const element = copyRef.current
     if (!element) return
     const fit = () => {
-      let fontSize = 16
+      let fontSize = 15
       element.style.fontSize = `${fontSize}px`
-      while (element.scrollHeight > element.clientHeight && fontSize > 9) {
+      while (element.scrollHeight > element.clientHeight && fontSize > 9.5) {
         fontSize -= 0.5
         element.style.fontSize = `${fontSize}px`
       }

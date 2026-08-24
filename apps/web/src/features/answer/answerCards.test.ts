@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { RealtimeEvent } from '../../shared/protocol'
 import { applyAnswerEvent, type AnswerCard } from './answerCards'
+import { answerWithoutDuplicateCode, conciseQuestionTitle } from './presentation'
 
 function event(
   type: string,
@@ -97,5 +98,23 @@ describe('answer cards', () => {
     expect(revised).toHaveLength(1)
     expect(revised[0].answer).toBe('补充后的回答')
     expect(revised[0].code).toBe('print(1)')
+  })
+
+  it('turns a screenshot problem statement into a short display title', () => {
+    const title = conciseQuestionTitle(
+      '1331. 数组序号转换 给你一个整数数组 arr，请你将数组中的每个元素替换为它们排序后的序号。示例 1：输入 arr = [40,10,20,30]',
+    )
+
+    expect(title).toBe('1331. 数组序号转换')
+    expect(Array.from(title).length).toBeLessThanOrEqual(60)
+  })
+
+  it('removes code duplicated inside the answer when code has its own pane', () => {
+    const answer = answerWithoutDuplicateCode(
+      '先排序并建立映射。\n```python\ndef solve():\n  pass\n```\n复杂度 O(n log n)。',
+      'def solve():\n  pass',
+    )
+
+    expect(answer).toBe('先排序并建立映射。\n\n复杂度 O(n log n)。')
   })
 })

@@ -16,6 +16,10 @@ def test_single_prompt_handles_text_and_screenshot_coding() -> None:
     assert "截图与语音使用相同的回答规则" in INTERVIEW_SYSTEM_PROMPT
     assert "算法题必须返回完整 code" in INTERVIEW_SYSTEM_PROMPT
     assert "默认使用 Python" in INTERVIEW_SYSTEM_PROMPT
+    assert "最多 60 个字符" in INTERVIEW_SYSTEM_PROMPT
+    assert "题号 + 题名" in INTERVIEW_SYSTEM_PROMPT
+    assert "不得把题目描述、输入输出、示例、约束" in INTERVIEW_SYSTEM_PROMPT
+    assert "不得在 answer 中重复代码" in INTERVIEW_SYSTEM_PROMPT
 
 
 def test_single_prompt_only_allows_wait_or_answer_json() -> None:

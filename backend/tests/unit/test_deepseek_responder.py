@@ -77,6 +77,31 @@ async def test_invalid_json_is_reported_to_model_and_retried_once() -> None:
 
 
 @pytest.mark.asyncio
+async def test_oversized_question_is_retried_as_a_short_title() -> None:
+    oversized = json.dumps(
+        {
+            "type": "answer",
+            "question": "1331. 数组序号转换 " + "完整题目描述" * 20,
+            "answer": "排序、去重并建立排名映射。",
+            "code": "def array_rank_transform(arr):\n    return arr",
+        },
+        ensure_ascii=False,
+    )
+    client = FakeClient([response(oversized), response(valid_answer())])
+    subject = DeepSeekInterviewResponder(
+        "key", "https://example.com", "model", client=client
+    )
+
+    result = await subject.respond(prompt="question")
+
+    assert isinstance(result.result, AnswerResult)
+    assert len(result.output_failures) == 1
+    assert result.output_failures[0].error_type == "ValidationError"
+    retry_content = client.completions.calls[1]["messages"][1]["content"]
+    assert "short display title" in retry_content
+
+
+@pytest.mark.asyncio
 async def test_image_retry_resends_same_image_with_format_feedback() -> None:
     client = FakeClient([response(""), response(valid_answer())])
     subject = DeepSeekInterviewResponder(

@@ -48,3 +48,36 @@ def test_answer_result_always_requires_question_and_answer() -> None:
 
     with pytest.raises(ValidationError):
         AnswerResult(type="answer", question="实现两数之和", answer="")
+
+
+def test_answer_result_requires_a_short_question_and_concise_answer() -> None:
+    with pytest.raises(ValidationError, match="short display title"):
+        AnswerResult(
+            type="answer",
+            question="数组序号转换" * 20,
+            answer="排序、去重并建立排名映射。",
+        )
+
+    with pytest.raises(ValidationError, match="at most 600 characters"):
+        AnswerResult(
+            type="answer",
+            question="数组序号转换",
+            answer="思路" * 301,
+        )
+
+
+def test_answer_result_removes_code_fence_when_code_is_separate() -> None:
+    result = AnswerResult(
+        type="answer",
+        question="1331. 数组序号转换",
+        answer=(
+            "排序、去重并建立排名映射。\n\n"
+            "```python\ndef solve(arr):\n    return arr\n```\n\n"
+            "时间复杂度 O(n log n)。"
+        ),
+        code="def solve(arr):\n    return arr",
+    )
+
+    assert "```" not in result.answer
+    assert "def solve" not in result.answer
+    assert result.answer == "排序、去重并建立排名映射。\n\n时间复杂度 O(n log n)。"

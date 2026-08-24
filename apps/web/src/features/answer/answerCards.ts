@@ -1,4 +1,5 @@
 import type { RealtimeEvent } from '../../shared/protocol'
+import { answerWithoutDuplicateCode, conciseQuestionTitle } from './presentation'
 
 export interface AnswerCard {
   id: string
@@ -31,13 +32,14 @@ export function applyAnswerEvent(cards: AnswerCard[], event: RealtimeEvent): Ans
       if (!value || typeof value !== 'object') return []
       const card = value as Record<string, unknown>
       const id = String(card.id ?? '').trim()
-      const question = String(card.question ?? '').trim()
+      const question = conciseQuestionTitle(String(card.question ?? ''))
       if (!id || !question) return []
+      const code = String(card.code ?? '')
       return [{
         id,
         question,
-        answer: String(card.answer ?? ''),
-        code: String(card.code ?? ''),
+        answer: answerWithoutDuplicateCode(String(card.answer ?? ''), code),
+        code,
         source: String(card.source ?? 'VOICE'),
         generating: false,
         cancelled: Boolean(card.cancelled),
@@ -47,7 +49,7 @@ export function applyAnswerEvent(cards: AnswerCard[], event: RealtimeEvent): Ans
     })
   }
   if (event.type === 'focus.updated') {
-    const question = String(payload.question ?? '').trim()
+    const question = conciseQuestionTitle(String(payload.question ?? ''))
     if (!question) return cards
     const focusID = String(payload.focus_id ?? event.event_id)
     if (cards.some((card) => card.id === focusID)) return cards
@@ -85,14 +87,15 @@ export function applyAnswerEvent(cards: AnswerCard[], event: RealtimeEvent): Ans
     return replaceAt(cards, targetIndex, { ...target, answer: target.answer + String(payload.delta ?? ''), generating: true })
   }
   if (event.type === 'answer.completed') {
-    const answer = withLegacyComplexity(
+    const code = String(payload.code ?? target.code)
+    const answer = answerWithoutDuplicateCode(withLegacyComplexity(
       String(payload.answer ?? ''),
       String(payload.complexity ?? ''),
-    )
+    ), code)
     return replaceAt(cards, targetIndex, {
       ...target,
       answer,
-      code: String(payload.code ?? target.code),
+      code,
       source: String(payload.source ?? target.source),
       generating: false,
       cancelled: false,

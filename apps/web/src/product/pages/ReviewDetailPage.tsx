@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { apiRequest } from '../../shared/api'
+import { conciseQuestionTitle } from '../../features/answer/presentation'
 import { useAuth } from '../AuthContext'
 import { useProduct } from '../ProductContext'
 
@@ -85,7 +86,7 @@ export function ReviewDetailPage() {
           {focusCards.map((focus, index) => (
             <article className="review-focus-card" key={focus.id}>
               <header><span>问题 {index + 1}</span><time>{new Date(focus.createdAt).toLocaleTimeString('zh-CN', { hour12: false })}</time>{focus.source === 'SCREENSHOT' ? <em>截图识别</em> : null}</header>
-              <h3>{focus.question}</h3>
+              <h3 title={focus.question}>{conciseQuestionTitle(focus.question)}</h3>
               <div><span>建议回答</span><p>{focus.answer || '本题没有保存建议回答。'}</p></div>
               {focus.code ? <details><summary>查看 Python 代码</summary><pre><code>{focus.code}</code></pre></details> : null}
             </article>
@@ -148,7 +149,7 @@ function eventView(event: TaskEventRecord) {
     }
   }
   if (event.event_type === 'focus.updated') {
-    return { type: '面试问题', title: String(payload.question ?? ''), detail: '问题已整理' }
+    return { type: '面试问题', title: conciseQuestionTitle(String(payload.question ?? '')), detail: '问题已整理' }
   }
   if (event.event_type === 'answer.completed') {
     return { type: '建议回答', title: String(payload.answer ?? ''), detail: '回答已显示' }
