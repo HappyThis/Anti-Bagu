@@ -121,7 +121,6 @@ class RuntimeRegistry:
             recorder = TaskEventRecorder(
                 task_id,
                 self._sessions,
-                self._settings.storage_dir,
                 queue_size=self._settings.audit_queue_size,
             )
             await recorder.start()

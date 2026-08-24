@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from sqlalchemy import select
 from anti_bagu.api.app import create_app
 from anti_bagu.config import Settings
 from anti_bagu.credentials.service import ModelCredentials
+from anti_bagu.interview.events import RealtimeEvent
 from anti_bagu.persistence.models import Task, TaskEvent, User, UserModelCredentials
 from anti_bagu.tasks.model_verifier import VerificationResult
 
@@ -55,6 +57,23 @@ async def mark_task_running(app, task_id: str) -> None:
         assert task is not None
         task.status = "running"
         await session.commit()
+
+
+async def publish_task_latency(app, task_id: str) -> None:
+    runtime = await app.state.runtime_registry.get(task_id)
+    for payload in (
+        {"asr": 100.0},
+        {"asr": 300.0, "model": 400.0, "endToEnd": 900.0},
+        {"model": 600.0, "endToEnd": 1_100.0},
+    ):
+        await runtime.event_hub.publish(
+            RealtimeEvent(
+                type="latency.updated",
+                session_id=task_id,
+                conversation_revision=0,
+                payload=payload,
+            )
+        )
 
 
 async def seed_answer_cards(app, task_id: str, count: int) -> None:
@@ -136,6 +155,63 @@ async def seed_runtime_checkpoint(app, task_id: str) -> None:
                 ),
             ]
         )
+        await session.commit()
+
+
+async def seed_completed_review_metrics(
+    app, task_id: str, summarized: bool
+) -> None:
+    async with app.state.session_factory() as session:
+        task = await session.get(Task, task_id)
+        assert task is not None
+        now = datetime.now(UTC)
+        task.status = "completed"
+        task.started_at = now - timedelta(minutes=5)
+        task.ended_at = now
+        session.add(
+            TaskEvent(
+                task_id=task_id,
+                event_id=f"review-focus-{task_id}",
+                event_type="focus.updated",
+                conversation_revision=1,
+                payload={
+                    "focus_id": f"focus-{task_id}",
+                    "question": "Redis 为什么快？",
+                },
+            )
+        )
+        if summarized:
+            session.add(
+                TaskEvent(
+                    task_id=task_id,
+                    event_id=f"review-metrics-{task_id}",
+                    event_type="task.metrics",
+                    conversation_revision=1,
+                    payload={
+                        "end_to_end_avg_ms": 1_234.5,
+                        "end_to_end_sample_count": 4,
+                    },
+                )
+            )
+        else:
+            session.add_all(
+                [
+                    TaskEvent(
+                        task_id=task_id,
+                        event_id=f"legacy-latency-a-{task_id}",
+                        event_type="latency.updated",
+                        conversation_revision=1,
+                        payload={"endToEnd": 1_000},
+                    ),
+                    TaskEvent(
+                        task_id=task_id,
+                        event_id=f"legacy-latency-b-{task_id}",
+                        event_type="latency.updated",
+                        conversation_revision=1,
+                        payload={"endToEnd": 2_000},
+                    ),
+                ]
+            )
         await session.commit()
 
 
@@ -249,6 +325,82 @@ def test_task_ui_snapshot_restores_more_than_fifty_answer_cards(tmp_path) -> Non
         assert len(snapshot["payload"]["cards"]) == 106
         assert snapshot["payload"]["cards"][0]["question"] == "问题 1"
         assert snapshot["payload"]["cards"][-1]["question"] == "问题 106"
+
+
+def test_reviews_use_task_metric_summary_with_legacy_latency_fallback(tmp_path) -> None:
+    app = create_app(cloud_settings(tmp_path))
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-horse-battery"},
+        ).json()
+        summarized_task = client.post(
+            "/api/v1/tasks",
+            headers=bearer(login["token"]),
+            json={"name": "Summary", "mobile_required": False},
+        ).json()
+        legacy_task = client.post(
+            "/api/v1/tasks",
+            headers=bearer(login["token"]),
+            json={"name": "Legacy", "mobile_required": False},
+        ).json()
+        assert client.portal is not None
+        client.portal.call(
+            seed_completed_review_metrics,
+            app,
+            summarized_task["id"],
+            True,
+        )
+        client.portal.call(
+            seed_completed_review_metrics,
+            app,
+            legacy_task["id"],
+            False,
+        )
+
+        response = client.get("/api/v1/reviews", headers=bearer(login["token"]))
+
+        assert response.status_code == 200
+        reviews = {item["task_id"]: item for item in response.json()}
+        assert reviews[summarized_task["id"]]["question_count"] == 1
+        assert reviews[summarized_task["id"]]["avg_latency_ms"] == 1_234.5
+        assert reviews[legacy_task["id"]]["avg_latency_ms"] == 1_500
+
+
+def test_task_end_persists_one_latency_summary(tmp_path) -> None:
+    app = create_app(cloud_settings(tmp_path))
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-horse-battery"},
+        ).json()
+        task = client.post(
+            "/api/v1/tasks",
+            headers=bearer(login["token"]),
+            json={"name": "Metrics", "mobile_required": False},
+        ).json()
+        assert client.portal is not None
+        client.portal.call(publish_task_latency, app, task["id"])
+
+        ended = client.post(
+            f"/api/v1/tasks/{task['id']}/end",
+            headers=bearer(login["token"]),
+        )
+        events = client.get(
+            f"/api/v1/tasks/{task['id']}/events?types=task.metrics",
+            headers=bearer(login["token"]),
+        ).json()
+
+        assert ended.status_code == 200
+        assert len(events) == 1
+        assert events[0]["payload"] == {
+            "asr_sample_count": 2,
+            "asr_avg_ms": 200.0,
+            "model_sample_count": 2,
+            "model_avg_ms": 500.0,
+            "end_to_end_sample_count": 2,
+            "end_to_end_avg_ms": 1_000.0,
+        }
 
 
 def test_mobile_pairing_survives_server_restart_and_restores_snapshot(tmp_path) -> None:

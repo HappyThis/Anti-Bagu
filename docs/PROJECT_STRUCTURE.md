@@ -83,8 +83,11 @@ SQLAlchemy metadata + TaskEventRecorder + PCMArchive
 - Router 只处理鉴权、协议转换和 HTTP 状态码。
 - 任务状态迁移只允许由 `TaskService` 执行。
 - Focus 触发规则只存在于 `InterviewCoordinator`。
-- 用户模型 Key 不进入数据库、平台日志或浏览器存储。
-- 高频 `audio.level` 不落数据库；转写、Focus、回答、延迟、错误和完整 LLM 输入都按任务保存。
+- 用户模型 Key 加密进入凭据表，不进入平台日志、任务事件或浏览器存储。
+- PostgreSQL 是任务业务事件的唯一事实来源；按任务 JSONL 不再双写。
+- 高频 `audio.level`、`latency.updated`、`transcript.partial` 和连接状态只在内存实时分发。
+- 最终对话、Focus/水位、回答、LLM 输入输出、截图结果、预检和关键错误按任务保存。
+- 延迟在内存聚合，任务结束时只保存一条 `task.metrics` 汇总。
 - 每个任务拥有独立 Coordinator、EventHub、事件队列和内存模型客户端。
 - Beta 只运行一个 Uvicorn worker；多 worker 之前必须把连接路由迁移到 Redis。
 
@@ -104,12 +107,13 @@ PostgreSQL：
 
 ```text
 /var/lib/anti-bagu/storage/tasks/<task-id>/
-├── events/YYYY-MM-DD.jsonl
-└── audio/
-    ├── interviewer.pcm
-    ├── interviewer.json
-    ├── candidate.pcm
-    └── candidate.json
+├── audio/
+│   ├── interviewer.pcm
+│   ├── interviewer.json
+│   ├── candidate.pcm
+│   └── candidate.json
+└── screenshots/
+    └── <screenshot-id>.jpg
 ```
 
 平台日志保存在 `/var/lib/anti-bagu/logs/YYYY-MM-DD.jsonl`，默认脱敏正文和所有 Token/Key。
@@ -118,7 +122,7 @@ PostgreSQL：
 
 - Web Session：随机不可预测的 opaque token，默认 7 天，数据库只保存 SHA-256。
 - Agent Token：CLI 使用用户名密码登录后签发，默认 30 天，保存在 macOS Keychain。
-- 模型 Key：只保存在 macOS Keychain；任务预检时通过 WSS 临时发送到单个任务运行时内存。
+- 模型 Key：由用户在 Web 设置，服务端使用本机加密密钥加密保存；任务运行时仅持有当前用户的解密结果。
 - 手机端：任务所有者生成 10 分钟临时配对 Token，扫码后只订阅当前任务的 Focus 和回答事件。
 
 ## 部署约束

@@ -25,7 +25,7 @@ interface ReviewFocusCard {
 }
 
 const DISPLAYED_EVENTS = new Set([
-  'transcript.final',
+  'transcript.committed',
   'focus.updated',
   'answer.completed',
   'answer.cancelled',
@@ -140,7 +140,7 @@ function buildFocusCards(events: TaskEventRecord[]): ReviewFocusCard[] {
 
 function eventView(event: TaskEventRecord) {
   const payload = event.payload
-  if (event.event_type === 'transcript.final') {
+  if (event.event_type === 'transcript.committed') {
     return {
       type: payload.channel === 'candidate' ? '我' : '面试官',
       title: String(payload.text ?? ''),

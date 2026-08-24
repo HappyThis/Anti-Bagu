@@ -329,6 +329,15 @@ class TaskService:
             await session.commit()
             await session.refresh(task)
         runtime = await self._runtimes.get(task_id)
+        if mark_ended:
+            await runtime.event_hub.publish(
+                RealtimeEvent(
+                    type="task.metrics",
+                    session_id=task_id,
+                    conversation_revision=runtime.coordinator.store.revision,
+                    payload=runtime.event_hub.latency_summary(),
+                )
+            )
         await runtime.event_hub.publish(
             RealtimeEvent(
                 type="task.status",

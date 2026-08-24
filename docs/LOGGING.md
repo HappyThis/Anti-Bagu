@@ -34,11 +34,10 @@ ANTIBAGU_LOG_INCLUDE_TEXT=true
 
 完成排查后建议恢复为 `false`。
 
-最近事件也保存在内存环形缓冲区，可通过以下接口查看，不需要等待文件刷新：
+最近事件也保存在内存环形缓冲区，管理员可通过以下接口查看，不需要等待文件刷新：
 
 ```text
-GET /api/debug/events?limit=200
-GET /api/debug/events?limit=200&event_prefix=focus.
+GET /api/v1/admin/logs?limit=200
 ```
 
 相关配置：
@@ -51,3 +50,9 @@ ANTIBAGU_LOG_QUEUE_SIZE=4096
 ```
 
 业务协程只做非阻塞入队，后台任务批量写文件。队列满或磁盘写入失败时会增加 `/health` 中的 `audit_dropped_events`，不会让音频、ASR 或 Focus 链路等待磁盘 I/O。
+
+任务业务事件与系统日志职责不同：
+
+- PostgreSQL `task_events` 保存重启恢复、复盘和管理员诊断需要的持久化事件。
+- `/var/lib/anti-bagu/logs/YYYY-MM-DD.jsonl` 保存按日脱敏系统运行日志。
+- 不再生成 `/storage/tasks/<task-id>/events/*.jsonl`，避免与 PostgreSQL 重复保存业务正文。

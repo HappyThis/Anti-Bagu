@@ -82,23 +82,45 @@ async def reviews(
             await session.scalars(
                 select(TaskEvent)
                 .where(TaskEvent.task_id.in_(task_ids))
-                .where(TaskEvent.event_type.in_(("focus.updated", "latency.updated")))
+                .where(
+                    TaskEvent.event_type.in_(
+                        ("focus.updated", "task.metrics", "latency.updated")
+                    )
+                )
+                .order_by(TaskEvent.created_at.asc(), TaskEvent.id.asc())
             )
         ).all()
         if task_ids
         else []
     )
     focus_ids_by_task: dict[str, set[str]] = {task_id: set() for task_id in task_ids}
-    latencies_by_task: dict[str, list[float]] = {task_id: [] for task_id in task_ids}
+    metrics_by_task: dict[str, dict[str, object]] = {}
+    legacy_latencies_by_task: dict[str, list[float]] = {
+        task_id: [] for task_id in task_ids
+    }
     for event in events:
         if event.event_type == "focus.updated":
             focus_id = str(event.payload.get("focus_id") or event.event_id)
             focus_ids_by_task[event.task_id].add(focus_id)
+        elif event.event_type == "task.metrics":
+            metrics_by_task[event.task_id] = event.payload
         elif event.payload.get("endToEnd") is not None:
-            latencies_by_task[event.task_id].append(float(event.payload["endToEnd"]))
+            legacy_latencies_by_task[event.task_id].append(
+                float(event.payload["endToEnd"])
+            )
     result = []
     for task in tasks:
-        latencies = latencies_by_task[task.id]
+        metrics = metrics_by_task.get(task.id, {})
+        legacy_latencies = legacy_latencies_by_task[task.id]
+        avg_latency_ms = (
+            float(metrics.get("end_to_end_avg_ms") or 0)
+            if metrics
+            else (
+                sum(legacy_latencies) / len(legacy_latencies)
+                if legacy_latencies
+                else 0
+            )
+        )
         duration_seconds = (
             max(0.0, (task.ended_at - task.started_at).total_seconds())
             if task.started_at is not None and task.ended_at is not None
@@ -112,7 +134,7 @@ async def reviews(
                 "date": task.started_at or task.created_at,
                 "duration_seconds": duration_seconds,
                 "question_count": len(focus_ids_by_task[task.id]),
-                "avg_latency_ms": sum(latencies) / len(latencies) if latencies else 0,
+                "avg_latency_ms": avg_latency_ms,
             }
         )
     return result

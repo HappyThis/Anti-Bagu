@@ -117,7 +117,15 @@ class Task(Base):
 
 class TaskEvent(Base):
     __tablename__ = "task_events"
-    __table_args__ = (Index("ix_task_events_task_created", "task_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_task_events_task_created", "task_id", "created_at"),
+        Index(
+            "ix_task_events_task_type_created",
+            "task_id",
+            "event_type",
+            "created_at",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)

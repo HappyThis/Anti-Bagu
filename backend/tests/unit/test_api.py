@@ -89,6 +89,32 @@ async def test_event_hub_replays_latest_audio_and_latency_state() -> None:
     assert latency.payload == {"microphone": 1.2}
 
 
+async def test_event_hub_aggregates_only_summary_latency_dimensions() -> None:
+    hub = EventHub()
+    for payload in (
+        {"asr": 100.0, "microphone": 2.0},
+        {"asr": 300.0, "model": 400.0, "endToEnd": 900.0},
+        {"model": 600.0, "endToEnd": 1_100.0},
+    ):
+        await hub.publish(
+            RealtimeEvent(
+                type="latency.updated",
+                session_id="session",
+                conversation_revision=0,
+                payload=payload,
+            )
+        )
+
+    assert hub.latency_summary() == {
+        "asr_sample_count": 2,
+        "asr_avg_ms": 200.0,
+        "model_sample_count": 2,
+        "model_avg_ms": 500.0,
+        "end_to_end_sample_count": 2,
+        "end_to_end_avg_ms": 1_000.0,
+    }
+
+
 async def test_event_hub_replays_latest_screenshot_state() -> None:
     hub = EventHub()
     await hub.publish(
