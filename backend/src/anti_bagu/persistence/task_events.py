@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from anti_bagu.interview.events import RealtimeEvent
 from anti_bagu.persistence.models import TaskEvent
 
-SKIPPED_EVENTS = {"audio.level"}
+SKIPPED_EVENTS = {"audio.level", "latency.updated", "transcript.partial"}
 LOGGER = logging.getLogger(__name__)
 
 

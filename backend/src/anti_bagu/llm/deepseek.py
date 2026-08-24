@@ -42,6 +42,7 @@ class DeepSeekInterviewResponder:
         prompt: str,
         image_data: bytes | None = None,
         mime_type: str | None = None,
+        selection_hint: str = "",
     ) -> InterviewResponse:
         has_image = image_data is not None
         encoded = base64.b64encode(image_data).decode("ascii") if has_image else ""
@@ -57,6 +58,7 @@ class DeepSeekInterviewResponder:
                 has_image=has_image,
                 encoded_image=encoded,
                 mime_type=mime_type,
+                selection_hint=selection_hint,
                 retry_note=retry_note,
             )
             request: dict[str, Any] = {
@@ -105,6 +107,7 @@ class DeepSeekInterviewResponder:
         has_image: bool,
         encoded_image: str,
         mime_type: str | None,
+        selection_hint: str,
         retry_note: str,
     ) -> str | list[dict[str, Any]]:
         if not has_image:
@@ -114,6 +117,8 @@ class DeepSeekInterviewResponder:
             if retry_note
             else SCREENSHOT_INPUT_NOTE
         )
+        if selection_hint:
+            instruction += f"\n\n最近面试官的选题提示：{selection_hint}"
         return [
             {
                 "type": "image_url",
@@ -135,6 +140,7 @@ class UnavailableInterviewResponder:
         prompt: str,
         image_data: bytes | None = None,
         mime_type: str | None = None,
+        selection_hint: str = "",
     ) -> ModelResult:
-        del prompt, image_data, mime_type
+        del prompt, image_data, mime_type, selection_hint
         raise RuntimeError("DEEPSEEK_API_KEY is not configured")

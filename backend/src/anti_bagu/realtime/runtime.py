@@ -13,6 +13,7 @@ from anti_bagu.llm.deepseek import (
     UnavailableInterviewResponder,
 )
 from anti_bagu.llm.prompts import INTERVIEW_SYSTEM_PROMPT
+from anti_bagu.persistence.runtime_state import PersistedRuntimeState, load_runtime_state
 from anti_bagu.persistence.task_events import TaskEventRecorder
 from anti_bagu.telemetry.audit import DailyJsonlAudit
 
@@ -40,6 +41,9 @@ class TaskRuntime:
         )
 
     async def configure(self, *, dashscope_api_key: str, deepseek_api_key: str) -> None:
+        turns = self.coordinator.store.turns
+        focuses = self.coordinator.store.focuses
+        last_analyzed_turn_id = self.coordinator.last_analyzed_turn_id
         await self.coordinator.close()
         await self._close_models()
         self.dashscope_api_key = dashscope_api_key
@@ -49,6 +53,18 @@ class TaskRuntime:
             self.settings.deepseek_model,
         )
         self.coordinator = self._new_coordinator()
+        self.coordinator.restore_state(
+            turns=turns,
+            focuses=focuses,
+            last_analyzed_turn_id=last_analyzed_turn_id,
+        )
+
+    def restore_state(self, state: PersistedRuntimeState) -> None:
+        self.coordinator.restore_state(
+            turns=state.turns,
+            focuses=state.focuses,
+            last_analyzed_turn_id=state.last_analyzed_turn_id,
+        )
 
     async def close(self) -> None:
         await self.coordinator.close()
@@ -111,6 +127,7 @@ class RuntimeRegistry:
             await recorder.start()
             event_hub = EventHub(audit=self._audit, recorder=recorder.record)
             runtime = TaskRuntime(task_id, self._settings, event_hub, recorder)
+            runtime.restore_state(await load_runtime_state(self._sessions, task_id))
             self._runtimes[task_id] = runtime
             return runtime
 

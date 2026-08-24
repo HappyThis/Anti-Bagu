@@ -76,19 +76,29 @@ async def reviews(
             .order_by(desc(Task.ended_at))
         )
     ).all()
-    result = []
-    for task in tasks:
-        events = (
+    task_ids = [task.id for task in tasks]
+    events = (
+        (
             await session.scalars(
-                select(TaskEvent).where(TaskEvent.task_id == task.id)
+                select(TaskEvent)
+                .where(TaskEvent.task_id.in_(task_ids))
+                .where(TaskEvent.event_type.in_(("focus.updated", "latency.updated")))
             )
         ).all()
-        latencies = [
-            float(event.payload["endToEnd"])
-            for event in events
-            if event.event_type == "latency.updated"
-            and event.payload.get("endToEnd") is not None
-        ]
+        if task_ids
+        else []
+    )
+    focus_ids_by_task: dict[str, set[str]] = {task_id: set() for task_id in task_ids}
+    latencies_by_task: dict[str, list[float]] = {task_id: [] for task_id in task_ids}
+    for event in events:
+        if event.event_type == "focus.updated":
+            focus_id = str(event.payload.get("focus_id") or event.event_id)
+            focus_ids_by_task[event.task_id].add(focus_id)
+        elif event.payload.get("endToEnd") is not None:
+            latencies_by_task[event.task_id].append(float(event.payload["endToEnd"]))
+    result = []
+    for task in tasks:
+        latencies = latencies_by_task[task.id]
         duration_seconds = (
             max(0.0, (task.ended_at - task.started_at).total_seconds())
             if task.started_at is not None and task.ended_at is not None
@@ -101,9 +111,7 @@ async def reviews(
                 "task_name": task.name,
                 "date": task.started_at or task.created_at,
                 "duration_seconds": duration_seconds,
-                "question_count": sum(
-                    event.event_type == "focus.updated" for event in events
-                ),
+                "question_count": len(focus_ids_by_task[task.id]),
                 "avg_latency_ms": sum(latencies) / len(latencies) if latencies else 0,
             }
         )

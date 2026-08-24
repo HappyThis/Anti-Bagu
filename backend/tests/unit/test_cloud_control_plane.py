@@ -92,6 +92,62 @@ async def seed_answer_cards(app, task_id: str, count: int) -> None:
         await session.commit()
 
 
+async def seed_runtime_checkpoint(app, task_id: str) -> None:
+    async with app.state.session_factory() as session:
+        session.add_all(
+            [
+                TaskEvent(
+                    task_id=task_id,
+                    event_id="runtime-turn",
+                    event_type="transcript.committed",
+                    conversation_revision=1,
+                    payload={
+                        "turn_id": 1,
+                        "channel": "interviewer",
+                        "text": "Redis 为什么快？",
+                        "source_event_id": "source-turn",
+                    },
+                ),
+                TaskEvent(
+                    task_id=task_id,
+                    event_id="runtime-focus",
+                    event_type="focus.updated",
+                    conversation_revision=1,
+                    payload={
+                        "focus_id": "restored-focus",
+                        "question": "Redis 为什么快？",
+                        "source": "VOICE",
+                        "source_start_turn_id": 1,
+                        "source_end_turn_id": 1,
+                    },
+                ),
+                TaskEvent(
+                    task_id=task_id,
+                    event_id="runtime-answer",
+                    event_type="answer.completed",
+                    conversation_revision=1,
+                    payload={
+                        "focus_id": "restored-focus",
+                        "question": "Redis 为什么快？",
+                        "answer": "因为内存和 I/O 多路复用。",
+                        "code": "",
+                        "source": "VOICE",
+                    },
+                ),
+            ]
+        )
+        await session.commit()
+
+
+async def runtime_summary(app, task_id: str) -> tuple[int, str, int]:
+    runtime = await app.state.runtime_registry.get(task_id)
+    return (
+        len(runtime.coordinator.store.turns),
+        runtime.coordinator.store.current_focus,
+        runtime.coordinator.last_analyzed_turn_id,
+    )
+
+
 class SuccessfulModelVerifier:
     async def verify_asr(self, _: str) -> VerificationResult:
         return VerificationResult(True, "语音识别连接正常", 120.0)
@@ -225,6 +281,30 @@ def test_mobile_pairing_survives_server_restart_and_restores_snapshot(tmp_path) 
         assert snapshot["type"] == "answer.snapshot"
         assert snapshot["payload"]["total_count"] == 51
         assert snapshot["payload"]["cards"][-1]["question"] == "问题 51"
+
+
+def test_task_runtime_restores_focus_and_watermark_after_server_restart(tmp_path) -> None:
+    settings = cloud_settings(tmp_path)
+    first_app = create_app(settings)
+    with TestClient(first_app) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-horse-battery"},
+        ).json()
+        task = client.post(
+            "/api/v1/tasks",
+            headers=bearer(login["token"]),
+            json={"name": "Runtime restore", "mobile_required": False},
+        ).json()
+        assert client.portal is not None
+        client.portal.call(seed_runtime_checkpoint, first_app, task["id"])
+
+    second_app = create_app(settings)
+    with TestClient(second_app) as client:
+        assert client.portal is not None
+        restored = client.portal.call(runtime_summary, second_app, task["id"])
+
+    assert restored == (1, "Redis 为什么快？", 1)
 
 
 def test_activation_registration_login_and_task_lifecycle(tmp_path) -> None:

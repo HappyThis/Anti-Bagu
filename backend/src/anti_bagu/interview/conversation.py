@@ -109,3 +109,14 @@ class ConversationStore:
             {"role": turn.channel.value, "text": turn.text}
             for turn in self._turns[-max_turns:]
         ]
+
+    def restore(
+        self,
+        *,
+        turns: tuple[ConversationTurn, ...],
+        focuses: tuple[CommittedFocus, ...],
+    ) -> None:
+        self._turns = list(turns)
+        self._focuses = list(focuses)
+        self._next_turn_id = max((turn.turn_id for turn in turns), default=0) + 1
+        self.revision = sum(turn.channel is Channel.INTERVIEWER for turn in turns)

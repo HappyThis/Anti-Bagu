@@ -36,4 +36,5 @@ class InterviewResponder(Protocol):
         prompt: str,
         image_data: bytes | None = None,
         mime_type: str | None = None,
+        selection_hint: str = "",
     ) -> ModelResult | InterviewResponse: ...

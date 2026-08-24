@@ -251,17 +251,22 @@ async def create_pairing(
 async def task_events(
     task_id: str,
     limit: int = Query(default=500, ge=1, le=5_000),
+    types: str | None = Query(default=None),
     principal: Principal = Depends(current_principal),
     service: TaskService = Depends(task_service),
     session: AsyncSession = Depends(get_db),
 ):
     await _task_call(service.get_for(task_id, principal.user))
+    statement = select(TaskEvent).where(TaskEvent.task_id == task_id)
+    if types:
+        requested_types = tuple(
+            dict.fromkeys(value.strip() for value in types.split(",") if value.strip())
+        )
+        if requested_types:
+            statement = statement.where(TaskEvent.event_type.in_(requested_types[:20]))
     rows = (
         await session.scalars(
-            select(TaskEvent)
-            .where(TaskEvent.task_id == task_id)
-            .order_by(desc(TaskEvent.created_at))
-            .limit(limit)
+            statement.order_by(desc(TaskEvent.created_at)).limit(limit)
         )
     ).all()
     return [

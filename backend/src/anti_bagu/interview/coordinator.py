@@ -10,6 +10,8 @@ from anti_bagu.interview.conversation import ConversationStore
 from anti_bagu.interview.events import (
     AnswerResult,
     Channel,
+    CommittedFocus,
+    ConversationTurn,
     FocusSource,
     RealtimeEvent,
     TranscriptEvent,
@@ -79,6 +81,25 @@ class InterviewCoordinator:
     @property
     def active_focus_generation(self) -> int:
         return self._focus_generation
+
+    @property
+    def last_analyzed_turn_id(self) -> int:
+        return self._last_analyzed_turn_id
+
+    def restore_state(
+        self,
+        *,
+        turns: tuple[ConversationTurn, ...],
+        focuses: tuple[CommittedFocus, ...],
+        last_analyzed_turn_id: int,
+    ) -> None:
+        if self.model_task_active:
+            raise RuntimeError("cannot restore an active coordinator")
+        self.store.restore(turns=turns, focuses=focuses)
+        self._last_analyzed_turn_id = last_analyzed_turn_id
+        self._last_started_turn_id = max(
+            self.store.latest_turn_id, last_analyzed_turn_id
+        )
 
     async def handle_transcript(self, event: TranscriptEvent) -> None:
         await self._emit(
@@ -584,6 +605,7 @@ class InterviewCoordinator:
                     prompt=prompt.markdown,
                     image_data=image_data,
                     mime_type=mime_type,
+                    selection_hint=prompt.selection_hint,
                 ),
                 timeout=self._screenshot_timeout_seconds,
             )

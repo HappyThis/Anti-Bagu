@@ -24,6 +24,8 @@ ssh "$TARGET" "
   cd ${REMOTE_RELEASE}
   sudo -u antibagu bash -lc 'set -a; source /etc/anti-bagu/anti-bagu.env; set +a; .venv/bin/alembic -c backend/alembic.ini upgrade head'
   install -m 0644 ${REMOTE_RELEASE}/deploy/systemd/anti-bagu.service /etc/systemd/system/anti-bagu.service
+  install -m 0644 ${REMOTE_RELEASE}/deploy/nginx/anti-bagu.conf /etc/nginx/sites-available/anti-bagu
+  ln -sfn /etc/nginx/sites-available/anti-bagu /etc/nginx/sites-enabled/anti-bagu
   systemctl daemon-reload
   systemctl restart anti-bagu
   nginx -t

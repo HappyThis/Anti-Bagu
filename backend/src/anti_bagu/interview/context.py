@@ -21,6 +21,7 @@ class ProjectedTurn:
 class FocusPromptBuildResult:
     markdown: str
     estimated_total_tokens: int
+    selection_hint: str
     analysis_after_turn_id: int
     included_turn_ids: tuple[int, ...]
     included_focus_ids: tuple[str, ...]
@@ -98,6 +99,12 @@ class FocusPromptBuilder:
         )
 
         markdown = self._render(selected_focuses, selected_dialogue)
+        interviewer_turns = [
+            turn.text
+            for turn in selected_dialogue
+            if turn.channel is Channel.INTERVIEWER
+        ]
+        selection_hint = " ".join(interviewer_turns[-2:])
         included_turn_ids = tuple(
             turn_id
             for turn in selected_dialogue
@@ -115,6 +122,7 @@ class FocusPromptBuilder:
         return FocusPromptBuildResult(
             markdown=markdown,
             estimated_total_tokens=self._total_tokens(markdown),
+            selection_hint=selection_hint,
             analysis_after_turn_id=after_turn_id,
             included_turn_ids=included_turn_ids,
             included_focus_ids=included_focus_ids,

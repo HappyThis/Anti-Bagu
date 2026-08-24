@@ -779,6 +779,24 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .timeline-panel header, .model-settings-block header, .admin-panel header, .log-viewer header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
 .timeline-panel header h2, .model-settings-block h2, .admin-panel h2, .log-viewer h2 { margin: 0; font-size: 16px; }
 .timeline-panel header span { color: var(--muted); font-size: 12px; }
+.review-focus-section { margin-bottom: 20px; border: 1px solid var(--border); border-radius: 11px; padding: 22px; background: white; box-shadow: var(--shadow-card); }
+.review-focus-section > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.review-focus-section > header h2 { margin: 5px 0 0; font-size: 19px; }
+.review-focus-section > header > span { color: var(--muted); font-size: 12px; }
+.review-focus-list { display: grid; gap: 12px; }
+.review-focus-card { border: 1px solid var(--border); border-radius: 9px; padding: 17px 18px; background: var(--surface-soft); }
+.review-focus-card > header { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 10px; }
+.review-focus-card > header > span { color: var(--blue); font-weight: 750; }
+.review-focus-card > header em { border-radius: 999px; padding: 3px 6px; background: var(--blue-soft); color: var(--blue); font-style: normal; }
+.review-focus-card h3 { margin: 10px 0 14px; color: var(--ink); font-size: 17px; line-height: 1.45; }
+.review-focus-card > div { border-top: 1px solid var(--border); padding-top: 12px; }
+.review-focus-card > div > span { color: var(--green-dark); font-size: 10px; font-weight: 750; }
+.review-focus-card p { margin: 7px 0 0; color: var(--ink-soft); font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.review-focus-card details { margin-top: 12px; }
+.review-focus-card summary, .review-raw-details > summary { color: var(--blue); font-size: 11px; font-weight: 700; cursor: pointer; }
+.review-focus-card pre { max-height: 360px; overflow: auto; border-radius: 7px; padding: 13px; background: #111d33; color: #dce9ff; font-size: 11px; line-height: 1.55; }
+.review-raw-details { margin-top: 18px; }
+.review-raw-details > summary { width: fit-content; margin-bottom: 14px; }
 .timeline-event { display: grid; grid-template-columns: 62px 14px 1fr; gap: 12px; padding-top: 22px; }
 .timeline-event time { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11px; }
 .timeline-event > i { width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 4px var(--blue-soft); }

@@ -276,6 +276,18 @@ class TaskService:
         return await self._set_status(task_id, user, "paused")
 
     async def resume(self, task_id: str, user: User) -> Task:
+        credentials = await self._credentials.get(user.id)
+        if (
+            credentials is None
+            or not credentials.dashscope_api_key
+            or not credentials.deepseek_api_key
+        ):
+            raise TaskError("请先在设置中保存模型服务密钥")
+        runtime = await self._runtimes.get(task_id)
+        await runtime.configure(
+            dashscope_api_key=credentials.dashscope_api_key,
+            deepseek_api_key=credentials.deepseek_api_key,
+        )
         await self._agents.send(user.id, {"type": "task.resume", "task_id": task_id})
         return await self._set_status(task_id, user, "running")
 

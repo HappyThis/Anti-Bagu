@@ -180,6 +180,21 @@ def test_only_turns_after_last_analysis_are_rendered_as_new_dialogue() -> None:
     assert "- C: 因为内存。" not in result.markdown
     assert "- C: 我还会补充 I/O 多路复用。" in result.markdown
     assert "- I（最新）: 那单线程为什么能处理高并发？" in result.markdown
+    assert result.selection_hint == "那单线程为什么能处理高并发？"
+
+
+def test_screenshot_selection_hint_keeps_two_latest_interviewer_turns() -> None:
+    builder = FocusPromptBuilder(system_prompt=SYSTEM_PROMPT)
+    result = builder.build(
+        focuses=(),
+        turns=(
+            turn(1, Channel.INTERVIEWER, "请解释第 2 个问题。"),
+            turn(2, Channel.CANDIDATE, "我看一下。"),
+            turn(3, Channel.INTERVIEWER, "事务与并发控制这个问题。"),
+        ),
+    )
+
+    assert result.selection_hint == "请解释第 2 个问题。 事务与并发控制这个问题。"
 
 
 def test_latest_coding_focus_is_carried_into_next_prompt() -> None:

@@ -14,23 +14,14 @@ def test_health_starts_without_model_key(tmp_path) -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["model_configured"] is False
+    assert response.json()["model_mode"] == "per_user"
     assert response.json()["audit_dropped_events"] == 0
 
 
-def test_ui_websocket_removes_subscriber_after_disconnect(tmp_path) -> None:
+def test_legacy_global_realtime_endpoints_are_not_exposed(tmp_path) -> None:
     app = create_app(Settings(deepseek_api_key=None, audit_log_dir=tmp_path))
     with TestClient(app) as client:
-        with client.websocket_connect("/ws/ui"):
-            assert app.state.event_hub.subscriber_count == 1
-
-        assert app.state.event_hub.subscriber_count == 0
-
-
-def test_debug_events_returns_recent_redacted_audit_records(tmp_path) -> None:
-    app = create_app(Settings(deepseek_api_key=None, audit_log_dir=tmp_path))
-    with TestClient(app) as client:
-        response = client.post(
+        transcript = client.post(
             "/api/transcripts",
             json={
                 "channel": "candidate",
@@ -38,19 +29,14 @@ def test_debug_events_returns_recent_redacted_audit_records(tmp_path) -> None:
                 "text": "我的回答",
             },
         )
-        assert response.status_code == 202
-        debug = client.get(
-            "/api/debug/events", params={"event_prefix": "transcript."}
-        )
+        debug = client.get("/api/debug/events")
 
-    assert debug.status_code == 200
-    body = debug.json()
-    assert body["text_included"] is False
-    assert [item["event"] for item in body["events"]] == [
-        "transcript.final",
-        "transcript.committed",
-    ]
-    assert body["events"][0]["payload"]["text"]["redacted"] is True
+    assert transcript.status_code == 404
+    assert debug.status_code == 404
+    assert not any(
+        getattr(route, "path", None) in {"/ws/ui", "/ws/audio/{channel}"}
+        for route in app.routes
+    )
 
 
 def test_agent_hub_tracks_temporary_audio_test_levels() -> None:

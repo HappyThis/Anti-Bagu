@@ -36,7 +36,7 @@ class Settings:
     focus_characters_per_token: float = 1.7
     focus_debounce_ms: int = 300
     focus_max_coalesce_ms: int = 1_200
-    focus_timeout_seconds: float = 5.0
+    focus_timeout_seconds: float = 7.0
     screenshot_focus_timeout_seconds: float = 30.0
     audit_log_dir: Path = REPO_ROOT / ".runtime" / "logs"
     audit_include_text: bool = False
@@ -127,7 +127,7 @@ class Settings:
                 os.environ.get("ANTIBAGU_FOCUS_MAX_COALESCE_MS", "1200")
             ),
             focus_timeout_seconds=float(
-                os.environ.get("ANTIBAGU_FOCUS_TIMEOUT_SECONDS", "5")
+                os.environ.get("ANTIBAGU_FOCUS_TIMEOUT_SECONDS", "7")
             ),
             screenshot_focus_timeout_seconds=float(
                 os.environ.get("ANTIBAGU_SCREENSHOT_FOCUS_TIMEOUT_SECONDS", "30")

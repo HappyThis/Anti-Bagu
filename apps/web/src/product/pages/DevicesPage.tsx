@@ -93,7 +93,7 @@ export function DevicesPage() {
           <section className="model-settings-block">
             <header>
               <span className="model-icon"><Waveform size={23} weight="duotone" /></span>
-              <div><span className="model-kind">语音识别</span><h2>{services?.asr.name ?? 'Qwen Audio ASR Flash'}</h2></div>
+              <div><span className="model-kind">语音识别</span><h2>面试声音转文字</h2></div>
               <span className={`connected-pill ${services?.asr.configured ? '' : 'connected-pill--offline'}`}><i />{services?.asr.configured ? '已保存' : '待设置'}</span>
             </header>
             <label>
@@ -109,7 +109,7 @@ export function DevicesPage() {
           <section className="model-settings-block">
             <header>
               <span className="model-icon"><Brain size={23} weight="duotone" /></span>
-              <div><span className="model-kind">回答生成</span><h2>{services?.llm.name ?? 'DeepSeek V4 Flash Vision'}</h2></div>
+              <div><span className="model-kind">回答生成</span><h2>问题识别与建议回答</h2></div>
               <span className={`connected-pill ${services?.llm.configured ? '' : 'connected-pill--offline'}`}><i />{services?.llm.configured ? '已保存' : '待设置'}</span>
             </header>
             <label>

@@ -87,6 +87,7 @@ async def test_image_retry_resends_same_image_with_format_feedback() -> None:
         prompt="ignored for image",
         image_data=b"image",
         mime_type="image/jpeg",
+        selection_hint="第 2 个问题：事务与并发控制",
     )
 
     assert isinstance(result, InterviewResponse)
@@ -94,6 +95,7 @@ async def test_image_retry_resends_same_image_with_format_feedback() -> None:
     retry_content = client.completions.calls[1]["messages"][1]["content"]
     assert first_content[0]["image_url"] == retry_content[0]["image_url"]
     assert "empty content" in retry_content[1]["text"]
+    assert "第 2 个问题：事务与并发控制" in retry_content[1]["text"]
 
 
 @pytest.mark.asyncio
