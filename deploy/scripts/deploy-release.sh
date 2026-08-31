@@ -42,11 +42,16 @@ ssh "$TARGET" "
 
   install -m 0644 \"\${RELEASE}/deploy/systemd/anti-bagu.service\" \
     /etc/systemd/system/anti-bagu.service
+  install -m 0644 \"\${RELEASE}/deploy/systemd/anti-bagu-cert-renew.service\" \
+    /etc/systemd/system/anti-bagu-cert-renew.service
+  install -m 0644 \"\${RELEASE}/deploy/systemd/anti-bagu-cert-renew.timer\" \
+    /etc/systemd/system/anti-bagu-cert-renew.timer
   install -m 0644 \"\${RELEASE}/deploy/nginx/anti-bagu.conf\" \
     /etc/nginx/sites-available/anti-bagu
   ln -sfn /etc/nginx/sites-available/anti-bagu /etc/nginx/sites-enabled/anti-bagu
   nginx -t
   systemctl daemon-reload
+  systemctl enable --now anti-bagu-cert-renew.timer
 
   if [[ -L \"\${CURRENT}\" ]]; then
     PREVIOUS_TARGET=\"\$(readlink -f \"\${CURRENT}\")\"
